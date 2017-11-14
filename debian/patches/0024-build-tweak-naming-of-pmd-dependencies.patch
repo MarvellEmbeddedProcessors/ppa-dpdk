@@ -1,0 +1,40 @@
+From 7d223a3fd3da6a1d33304f91067fc56bd17416ca Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:52 +0100
+Subject: [PATCH 24/40] build: tweak naming of pmd dependencies
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/mempool/meson.build | 2 +-
+ drivers/net/meson.build     | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/mempool/meson.build b/drivers/mempool/meson.build
+index 869e75cb7..1d003b757 100644
+--- a/drivers/mempool/meson.build
++++ b/drivers/mempool/meson.build
+@@ -91,7 +91,7 @@ foreach drv:mempool_drivers
+ 
+ 	# create a dependency object and add it to the global dictionary so
+ 	# testpmd or other built-in apps can find it if necessary
+-	set_variable('dep_pmd_@0@'.format(drv),
++	set_variable('dep_rte_mempool_@0@'.format(drv),
+ 			declare_dependency(link_with: lib,
+ 			include_directories: includes))
+ endforeach
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 6b9177c05..07f3f7969 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -103,7 +103,7 @@ foreach drv:net_drivers
+ 
+ 	# create a dependency object and add it to the global dictionary so
+ 	# testpmd or other built-in apps can find it if necessary
+-	set_variable('dep_pmd_@0@'.format(drv),
++	set_variable('dep_rte_pmd_@0@'.format(drv),
+ 			declare_dependency(link_with: lib,
+ 			include_directories: includes))
+ endforeach
+-- 
+2.11.0
+

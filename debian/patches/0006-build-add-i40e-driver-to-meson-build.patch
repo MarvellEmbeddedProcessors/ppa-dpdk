@@ -1,0 +1,297 @@
+From bc1ba339e1af24e137153e96ca6079eed6291f17 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:34 +0100
+Subject: [PATCH 06/40] build: add i40e driver to meson build
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ config/rte_config.h               | 14 ++++++++
+ drivers/meson.build               | 32 ++++++++++++++++++
+ drivers/net/i40e/base/meson.build | 55 ++++++++++++++++++++++++++++++
+ drivers/net/i40e/meson.build      | 70 +++++++++++++++++++++++++++++++++++++++
+ drivers/net/meson.build           | 32 ++++++++++++++++++
+ meson.build                       |  7 ++++
+ 6 files changed, 210 insertions(+)
+ create mode 100644 drivers/meson.build
+ create mode 100644 drivers/net/i40e/base/meson.build
+ create mode 100644 drivers/net/i40e/meson.build
+ create mode 100644 drivers/net/meson.build
+
+diff --git a/config/rte_config.h b/config/rte_config.h
+index 4d5f7214c..5b687bb8e 100644
+--- a/config/rte_config.h
++++ b/config/rte_config.h
+@@ -47,6 +47,8 @@
+ 
+ #include <rte_build_config.h>
+ 
++/****** library defines ********/
++
+ /* EAL defines */
+ #define RTE_MAX_MEMSEG 512
+ #define RTE_MAX_MEMZONE 2560
+@@ -70,4 +72,16 @@
+ #define RTE_ETHDEV_QUEUE_STAT_CNTRS 16
+ #define RTE_ETHDEV_RXTX_CALLBACKS 1
+ 
++/****** driver defines ********/
++
++/* i40e defines */
++#define RTE_LIBRTE_I40E_RX_ALLOW_BULK_ALLOC 1
++#define RTE_LIBRTE_I40E_INC_VECTOR 1
++#undef RTE_LIBRTE_I40E_16BYTE_RX_DESC
++#define RTE_LIBRTE_I40E_QUEUE_NUM_PER_PF 64
++#define RTE_LIBRTE_I40E_QUEUE_NUM_PER_VF 4
++#define RTE_LIBRTE_I40E_QUEUE_NUM_PER_VM 4
++/* interval up to 8160 us, aligned to 2 (or default value) */
++#define RTE_LIBRTE_I40E_ITR_INTERVAL -1
++
+ #endif /* _RTE_CONFIG_H_ */
+diff --git a/drivers/meson.build b/drivers/meson.build
+new file mode 100644
+index 000000000..57f47c36f
+--- /dev/null
++++ b/drivers/meson.build
+@@ -0,0 +1,32 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++subdir('net')
+diff --git a/drivers/net/i40e/base/meson.build b/drivers/net/i40e/base/meson.build
+new file mode 100644
+index 000000000..43399cb11
+--- /dev/null
++++ b/drivers/net/i40e/base/meson.build
+@@ -0,0 +1,55 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++sources = [
++	'i40e_adminq.c',
++	'i40e_common.c',
++	'i40e_dcb.c',
++	'i40e_diag.c',
++	'i40e_hmc.c',
++	'i40e_lan_hmc.c',
++	'i40e_nvm.c'
++]
++
++error_cflags = ['-Wno-sign-compare',
++		'-Wno-unused-value',
++		'-Wno-format',
++		'-Wno-unused-but-set-variable']
++c_args = i40e_cflags
++foreach flag: error_cflags
++	if cc.has_argument(flag)
++		c_args += flag
++	endif
++endforeach
++
++base_lib = static_library('i40e_base', sources,
++	dependencies: rte_eal,
++	c_args: c_args)
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+new file mode 100644
+index 000000000..1e23e0820
+--- /dev/null
++++ b/drivers/net/i40e/meson.build
+@@ -0,0 +1,70 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++i40e_cflags = ['-DPF_DRIVER',
++	'-DVF_DRIVER',
++	'-DINTEGRATED_VF',
++	'-DX722_A0_SUPPORT']
++
++subdir('base')
++
++sources = [
++	'i40e_ethdev.c',
++	'i40e_rxtx.c',
++	'i40e_ethdev_vf.c',
++	'i40e_pf.c',
++	'i40e_fdir.c',
++	'i40e_flow.c',
++	'i40e_tm.c',
++	'rte_pmd_i40e.c'
++	]
++
++if arch_subdir == 'x86'
++	sources += 'i40e_rxtx_vec_sse.c'
++endif
++
++install_headers('rte_pmd_i40e.h')
++
++i40e_lib = library('rte_pmd_i40e', sources,
++	include_directories: include_directories('base'),
++	dependencies: [rte_eal, rte_net,
++			rte_mbuf, rte_ether,
++			rte_mempool, rte_ring,
++			rte_hash, rte_kvargs],
++	link_with: base_lib,
++	c_args: i40e_cflags,
++	install: true,
++	install_dir: 'dpdk/drivers')
++
++dpdk_drivers += i40e_lib
++
++i40e_pmd = declare_dependency(link_with: i40e_lib,
++	include_directories: include_directories('.'))
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+new file mode 100644
+index 000000000..22237b1aa
+--- /dev/null
++++ b/drivers/net/meson.build
+@@ -0,0 +1,32 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++subdir('i40e')
+diff --git a/meson.build b/meson.build
+index d797bbbb2..930656da6 100644
+--- a/meson.build
++++ b/meson.build
+@@ -40,6 +40,7 @@ project('DPDK', 'C',
+ cc = meson.get_compiler('c')
+ dpdk_conf = configuration_data()
+ dpdk_libraries = []
++dpdk_drivers = []
+ 
+ # for static libs, treat the drivers as regular libraries, otherwise
+ # for shared libs, put them in a driver folder
+@@ -56,6 +57,7 @@ subdir('config')
+ 
+ # now build libs and drivers
+ subdir('lib')
++subdir('drivers')
+ 
+ # write the build config
+ build_cfg = 'rte_build_config.h'
+@@ -63,6 +65,11 @@ configure_file(output: build_cfg,
+ 		configuration: dpdk_conf,
+ 		install_dir: get_option('includedir'))
+ 
++# for static builds, include the drivers directly
++if get_option('default_library') == 'static'
++	dpdk_libraries = dpdk_drivers + dpdk_libraries
++endif
++
+ # the DPDK libs needs to be passed to the link command in reverse order
+ dpdk_link_libs = []
+ foreach lib: dpdk_libraries
+-- 
+2.11.0
+

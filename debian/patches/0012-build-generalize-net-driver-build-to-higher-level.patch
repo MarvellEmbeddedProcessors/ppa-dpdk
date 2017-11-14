@@ -1,0 +1,141 @@
+From d034e0c935370fdc260ebb12a0767802cfd6e796 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:40 +0100
+Subject: [PATCH 12/40] build: generalize net driver build to higher level
+
+Move the logic for generating the pmdinfo file and the driver library
+itself to the meson.build file at the driver/net level, to avoid
+duplicating code.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/i40e/base/meson.build |  2 +-
+ drivers/net/i40e/meson.build      | 31 ++++---------------------
+ drivers/net/meson.build           | 48 ++++++++++++++++++++++++++++++++++++++-
+ 3 files changed, 52 insertions(+), 29 deletions(-)
+
+diff --git a/drivers/net/i40e/base/meson.build b/drivers/net/i40e/base/meson.build
+index 43399cb11..69f55497e 100644
+--- a/drivers/net/i40e/base/meson.build
++++ b/drivers/net/i40e/base/meson.build
+@@ -43,7 +43,7 @@ error_cflags = ['-Wno-sign-compare',
+ 		'-Wno-unused-value',
+ 		'-Wno-format',
+ 		'-Wno-unused-but-set-variable']
+-c_args = i40e_cflags
++c_args = cflags
+ foreach flag: error_cflags
+ 	if cc.has_argument(flag)
+ 		c_args += flag
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index 7d103868d..4652b8ac9 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -29,12 +29,13 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-i40e_cflags = ['-DPF_DRIVER',
++cflags = ['-DPF_DRIVER',
+ 	'-DVF_DRIVER',
+ 	'-DINTEGRATED_VF',
+ 	'-DX722_A0_SUPPORT']
+ 
+ subdir('base')
++libs = [base_lib]
+ 
+ sources = files(
+ 	'i40e_ethdev.c',
+@@ -56,31 +57,7 @@ if arch_subdir == 'x86'
+ 	sources += files('i40e_rxtx_vec_sse.c')
+ endif
+ 
++includes = include_directories('base', '.')
++
+ install_headers('rte_pmd_i40e.h')
+ 
+-pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+-		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+-foreach src: pmdinfogen_srcs
+-	out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
+-	tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
+-		src, include_directories: include_directories('base'),
+-		dependencies: deps,
+-		c_args: i40e_cflags)
+-	sources += custom_target(out_filename,
+-			command: [pmdinfo, tmp_lib.full_path(), '@OUTPUT@', pmdinfogen],
+-			output: out_filename,
+-			depends: [pmdinfogen, tmp_lib])
+-endforeach
+-
+-i40e_lib = library('rte_pmd_i40e', sources,
+-	include_directories: include_directories('base'),
+-	dependencies: deps,
+-	link_with: base_lib,
+-	c_args: i40e_cflags,
+-	install: true,
+-	install_dir: 'dpdk/drivers')
+-
+-dpdk_drivers += i40e_lib
+-
+-i40e_pmd = declare_dependency(link_with: i40e_lib,
+-	include_directories: include_directories('.'))
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 22237b1aa..db242d71b 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -29,4 +29,50 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-subdir('i40e')
++drivers = ['i40e']
++
++foreach drv:drivers
++	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
++
++	# set up empty variables used for build
++	sources = []
++	libs = []
++	cflags = []
++	deps = []
++	includes = []
++
++	# pull in driver directory which should assign to each of the above
++	subdir(drv)
++
++	# generate pmdinfo sources
++	pmdinfogen_srcs = run_command('grep', '--files-with-matches',
++		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
++	foreach src: pmdinfogen_srcs
++		out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
++		tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
++			src, include_directories: includes,
++			dependencies: deps,
++			c_args: cflags)
++		sources += custom_target(out_filename,
++				command: [pmdinfo, tmp_lib.full_path(), '@OUTPUT@', pmdinfogen],
++				output: out_filename,
++				depends: [pmdinfogen, tmp_lib])
++	endforeach
++
++	# now build the driver itself, and add to the drivers list
++	lib = library('rte_pmd_@0@'.format(drv), sources,
++		include_directories: includes,
++		dependencies: deps,
++		link_with: libs,
++		c_args: cflags,
++		install: true,
++		install_dir: driver_install_path)
++
++	dpdk_drivers += lib
++
++	# create a dependency object and add it to the global dictionary so
++	# testpmd or other built-in apps can find it if necessary
++	set_variable('dep_pmd_@0@'.format(drv),
++			declare_dependency(link_with: lib,
++			include_directories: includes))
++endforeach
+-- 
+2.11.0
+

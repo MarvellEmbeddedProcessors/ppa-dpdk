@@ -1,0 +1,38 @@
+From 39609dfe01932269980f39892e24f993b5a7e8ea Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:41 +0100
+Subject: [PATCH 13/40] build: remove hard-coded enablement of vector driver
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ config/rte_config.h          | 1 -
+ drivers/net/i40e/meson.build | 1 +
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/config/rte_config.h b/config/rte_config.h
+index 5b687bb8e..67028f682 100644
+--- a/config/rte_config.h
++++ b/config/rte_config.h
+@@ -76,7 +76,6 @@
+ 
+ /* i40e defines */
+ #define RTE_LIBRTE_I40E_RX_ALLOW_BULK_ALLOC 1
+-#define RTE_LIBRTE_I40E_INC_VECTOR 1
+ #undef RTE_LIBRTE_I40E_16BYTE_RX_DESC
+ #define RTE_LIBRTE_I40E_QUEUE_NUM_PER_PF 64
+ #define RTE_LIBRTE_I40E_QUEUE_NUM_PER_VF 4
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index 4652b8ac9..ea7f73d8e 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -54,6 +54,7 @@ deps = [rte_eal, rte_net,
+ 	rte_hash, rte_kvargs]
+ 
+ if arch_subdir == 'x86'
++	dpdk_conf.set('RTE_LIBRTE_I40E_INC_VECTOR', 1)
+ 	sources += files('i40e_rxtx_vec_sse.c')
+ endif
+ 
+-- 
+2.11.0
+

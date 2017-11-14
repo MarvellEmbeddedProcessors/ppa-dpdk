@@ -1,0 +1,93 @@
+From cbe7fa03427125524d376fe464ca843201f1fea0 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:55 +0100
+Subject: [PATCH 27/40] build: track dependencies recursively
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/mempool/meson.build             | 3 ++-
+ drivers/net/meson.build                 | 6 ++++--
+ lib/librte_eal/bsdapp/eal/meson.build   | 5 ++++-
+ lib/librte_eal/linuxapp/eal/meson.build | 5 ++++-
+ lib/meson.build                         | 3 ++-
+ 5 files changed, 16 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/mempool/meson.build b/drivers/mempool/meson.build
+index daaabc5b6..d998797ca 100644
+--- a/drivers/mempool/meson.build
++++ b/drivers/mempool/meson.build
+@@ -93,5 +93,6 @@ foreach drv:mempool_drivers
+ 	# testpmd or other built-in apps can find it if necessary
+ 	set_variable('dep_rte_mempool_@0@'.format(drv),
+ 			declare_dependency(link_with: lib,
+-			include_directories: includes))
++			include_directories: includes,
++			dependencies: dep_objs))
+ endforeach
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 3e587d809..00ee65988 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -56,7 +56,8 @@ foreach drv:net_drivers
+ 	# objects, internal deps managed by name of lib
+ 	ext_deps = []
+ 	# set up standard deps. Drivers can append/override as necessary
+-	deps = ['eal', 'net', 'mbuf', 'ether', 'mempool', 'ring', 'kvargs']
++	# 'ether' as dep, also pulls in mbuf, net, mempool, ring, eal etc
++	deps = ['ether', 'kvargs']
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+@@ -105,5 +106,6 @@ foreach drv:net_drivers
+ 	# testpmd or other built-in apps can find it if necessary
+ 	set_variable('dep_rte_pmd_@0@'.format(drv),
+ 			declare_dependency(link_with: lib,
+-			include_directories: includes))
++			include_directories: includes,
++			dependencies: dep_objs))
+ endforeach
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index 6c5f5e93d..86a9e3d14 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -58,5 +58,8 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 
+ dpdk_libraries += ['-pthread', eal_lib]
+ 
+-rte_eal = declare_dependency(link_with: eal_lib, include_directories: eal_inc)
++rte_eal = declare_dependency(link_with: eal_lib,
++		include_directories: eal_inc,
++		dependencies: dependency('threads'),
++		link_args: '-lexecinfo')
+ set_variable('dep_rte_eal', rte_eal)
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index 57bb5d52d..90ecfc394 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -63,5 +63,8 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 
+ dpdk_libraries += ['-pthread', '-ldl', eal_lib]
+ 
+-rte_eal = declare_dependency(link_with: eal_lib, include_directories: eal_inc)
++rte_eal = declare_dependency(link_with: eal_lib,
++		include_directories: eal_inc,
++		dependencies: dependency('threads'),
++		link_args: '-ldl')
+ set_variable('dep_rte_eal', rte_eal)
+diff --git a/lib/meson.build b/lib/meson.build
+index 0caf7bc75..e0c9c3c81 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -72,7 +72,8 @@ foreach l:libs
+ 			version: '@0@.1'.format(version),
+ 			install: true)
+ 	dep = declare_dependency(link_with: lib,
+-			include_directories: include_directories(dir_name))
++			include_directories: include_directories(dir_name),
++			dependencies: dep_objs)
+ 	set_variable('dep_rte_' + l, dep)
+ 
+ 	dpdk_libraries = [lib] + dpdk_libraries
+-- 
+2.11.0
+

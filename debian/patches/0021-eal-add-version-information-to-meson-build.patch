@@ -1,0 +1,69 @@
+From 109fc2c2a15fc4a1ea21782ef86f269f75f2f376 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:49 +0100
+Subject: [PATCH 21/40] eal: add version information to meson build
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ lib/librte_eal/bsdapp/eal/meson.build   | 6 +++++-
+ lib/librte_eal/linuxapp/eal/meson.build | 6 +++++-
+ lib/librte_eal/meson.build              | 1 +
+ 3 files changed, 11 insertions(+), 2 deletions(-)
+
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index ff2c2fee8..6c5f5e93d 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -44,11 +44,15 @@ sources = ['eal_alarm.c',
+ 		'eal_pci.c',
+ ]
+ 
++version_map = join_paths(meson.current_source_dir(), 'rte_eal_version.map')
+ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_sources,
+ 			dependencies: dependency('threads'),
+ 			include_directories : eal_inc,
++			version: '@0@.1'.format(version),
+ 			c_args: '-D_GNU_SOURCE',
+-			link_args: '-lexecinfo',
++			link_depends: version_map,
++			link_args: ['-lexecinfo',
++				'-Wl,--version-script=' + version_map],
+ 			install: true
+ )
+ 
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index d290ae65e..57bb5d52d 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -49,11 +49,15 @@ sources = ['eal_alarm.c',
+ 		'eal_pci.c',
+ ]
+ 
++version_map = join_paths(meson.current_source_dir(), 'rte_eal_version.map')
+ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_sources,
+ 			dependencies: dependency('threads'),
+ 			include_directories : eal_inc,
++			version: '@0@.1'.format(version),
+ 			c_args: '-D_GNU_SOURCE',
+-			link_args: '-ldl',
++			link_depends: version_map,
++			link_args: ['-ldl',
++				'-Wl,--version-script=' + version_map],
+ 			install: true
+ )
+ 
+diff --git a/lib/librte_eal/meson.build b/lib/librte_eal/meson.build
+index dec6baedd..1b2556121 100644
+--- a/lib/librte_eal/meson.build
++++ b/lib/librte_eal/meson.build
+@@ -29,6 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++version = 4  # the version of the EAL API
+ eal_inc = [global_inc]
+ subdir('common')
+ 
+-- 
+2.11.0
+

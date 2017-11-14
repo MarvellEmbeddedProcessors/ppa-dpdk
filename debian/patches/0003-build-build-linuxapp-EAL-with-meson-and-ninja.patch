@@ -1,0 +1,654 @@
+From 1a69a74cedd1b8e687d1a86e27ed6a4c38331800 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:31 +0100
+Subject: [PATCH 03/40] build: build linuxapp EAL with meson and ninja
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ config/meson.build                                 | 24 +++++++-
+ config/rte_config.h                                |  9 +++
+ config/x86/meson.build                             |  2 +
+ lib/librte_eal/common/arch/meson.build             | 33 ++++++++++
+ lib/librte_eal/common/arch/x86/meson.build         | 32 ++++++++++
+ lib/librte_eal/common/include/arch/meson.build     | 33 ++++++++++
+ lib/librte_eal/common/include/arch/x86/meson.build | 47 ++++++++++++++
+ lib/librte_eal/common/include/meson.build          | 71 ++++++++++++++++++++++
+ lib/librte_eal/common/meson.build                  | 71 ++++++++++++++++++++++
+ lib/librte_eal/linuxapp/eal/meson.build            | 62 +++++++++++++++++++
+ lib/librte_eal/linuxapp/meson.build                | 32 ++++++++++
+ lib/librte_eal/meson.build                         | 40 ++++++++++++
+ lib/meson.build                                    | 41 +++++++++++++
+ meson.build                                        |  3 +
+ meson_options.txt                                  |  7 ++-
+ 15 files changed, 504 insertions(+), 3 deletions(-)
+ create mode 100644 lib/librte_eal/common/arch/meson.build
+ create mode 100644 lib/librte_eal/common/arch/x86/meson.build
+ create mode 100644 lib/librte_eal/common/include/arch/meson.build
+ create mode 100644 lib/librte_eal/common/include/arch/x86/meson.build
+ create mode 100644 lib/librte_eal/common/include/meson.build
+ create mode 100644 lib/librte_eal/common/meson.build
+ create mode 100644 lib/librte_eal/linuxapp/eal/meson.build
+ create mode 100644 lib/librte_eal/linuxapp/meson.build
+ create mode 100644 lib/librte_eal/meson.build
+ create mode 100644 lib/meson.build
+
+diff --git a/config/meson.build b/config/meson.build
+index 59247d784..4a6a69d13 100644
+--- a/config/meson.build
++++ b/config/meson.build
+@@ -34,14 +34,34 @@ machine = get_option('machine')
+ dpdk_conf.set('RTE_MACHINE', machine)
+ add_project_arguments('-march=@0@'.format(machine), language: 'c')
+ 
++# add -include rte_config to cflags
++add_project_arguments('-include', 'rte_config.h', language: 'c')
++
++# disable any unwanted warnings
++unwanted_warnings = [
++	'-Wno-address-of-packed-member',
++	'-Wno-format-truncation'
++]
++foreach arg: unwanted_warnings
++	if cc.has_argument(arg)
++		add_project_arguments(arg, language: 'c')
++	endif
++endforeach
++
+ compile_time_cpuflags = []
+ if host_machine.cpu_family().startswith('x86')
+-	subdir('x86')
++	arch_subdir = 'x86'
++	subdir(arch_subdir)
+ endif
+ dpdk_conf.set('RTE_COMPILE_TIME_CPUFLAGS', ','.join(compile_time_cpuflags))
+ 
+-
+ # set the install path for the drivers
+ dpdk_conf.set_quoted('RTE_EAL_PMD_PATH', driver_install_path)
+ 
++# set other values pulled from the build options
++dpdk_conf.set('RTE_MAX_LCORE', get_option('max_lcores'))
++dpdk_conf.set('RTE_MAX_NUMA_NODES', get_option('max_numa_nodes'))
++dpdk_conf.set('RTE_LIBEAL_USE_HPET', get_option('use_hpet'))
++dpdk_conf.set('RTE_EAL_ALLOW_INV_SOCKET_ID', get_option('allow_invalid_socket_id'))
++
+ install_headers('rte_config.h')
+diff --git a/config/rte_config.h b/config/rte_config.h
+index 79b0db90f..7724ebcbe 100644
+--- a/config/rte_config.h
++++ b/config/rte_config.h
+@@ -47,4 +47,13 @@
+ 
+ #include <rte_build_config.h>
+ 
++/* EAL defines */
++#define RTE_MAX_MEMSEG 512
++#define RTE_MAX_MEMZONE 2560
++#define RTE_MAX_TAILQ 32
++#define RTE_LOG_LEVEL RTE_LOG_INFO
++#define RTE_LOG_DP_LEVEL RTE_LOG_INFO
++#define RTE_BACKTRACE 1
++#define RTE_EAL_VFIO 1
++
+ #endif /* _RTE_CONFIG_H_ */
+diff --git a/config/x86/meson.build b/config/x86/meson.build
+index 8fa3a38c0..54f8bcdb6 100644
+--- a/config/x86/meson.build
++++ b/config/x86/meson.build
+@@ -66,3 +66,5 @@ if cc.get_define('__AVX2__', args: march_opt) != ''
+ 	dpdk_conf.set('RTE_MACHINE_CPUFLAG_AVX2', 1)
+ 	compile_time_cpuflags += ['RTE_CPUFLAG_AVX2']
+ endif
++
++dpdk_conf.set('RTE_CACHE_LINE_SIZE', 64)
+diff --git a/lib/librte_eal/common/arch/meson.build b/lib/librte_eal/common/arch/meson.build
+new file mode 100644
+index 000000000..863d7e4bb
+--- /dev/null
++++ b/lib/librte_eal/common/arch/meson.build
+@@ -0,0 +1,33 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc += include_directories(arch_subdir)
++subdir(arch_subdir)
+diff --git a/lib/librte_eal/common/arch/x86/meson.build b/lib/librte_eal/common/arch/x86/meson.build
+new file mode 100644
+index 000000000..8fabad648
+--- /dev/null
++++ b/lib/librte_eal/common/arch/x86/meson.build
+@@ -0,0 +1,32 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_common_arch_sources = files('rte_spinlock.c', 'rte_cpuflags.c')
+diff --git a/lib/librte_eal/common/include/arch/meson.build b/lib/librte_eal/common/include/arch/meson.build
+new file mode 100644
+index 000000000..863d7e4bb
+--- /dev/null
++++ b/lib/librte_eal/common/include/arch/meson.build
+@@ -0,0 +1,33 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc += include_directories(arch_subdir)
++subdir(arch_subdir)
+diff --git a/lib/librte_eal/common/include/arch/x86/meson.build b/lib/librte_eal/common/include/arch/x86/meson.build
+new file mode 100644
+index 000000000..bd162938c
+--- /dev/null
++++ b/lib/librte_eal/common/include/arch/x86/meson.build
+@@ -0,0 +1,47 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++install_headers(
++	'rte_atomic_32.h',
++	'rte_atomic_64.h',
++	'rte_atomic.h',
++	'rte_byteorder_32.h',
++	'rte_byteorder_64.h',
++	'rte_byteorder.h',
++	'rte_cpuflags.h',
++	'rte_cycles.h',
++	'rte_io.h',
++	'rte_memcpy.h',
++	'rte_prefetch.h',
++	'rte_rtm.h',
++	'rte_rwlock.h',
++	'rte_spinlock.h',
++	'rte_vect.h')
+diff --git a/lib/librte_eal/common/include/meson.build b/lib/librte_eal/common/include/meson.build
+new file mode 100644
+index 000000000..e92c4eb7c
+--- /dev/null
++++ b/lib/librte_eal/common/include/meson.build
+@@ -0,0 +1,71 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc += include_directories('.')
++
++common_headers = [
++	'rte_alarm.h',
++	'rte_branch_prediction.h',
++	'rte_bus.h',
++	'rte_common.h',
++	'rte_debug.h',
++	'rte_devargs.h',
++	'rte_dev.h',
++	'rte_eal.h',
++	'rte_eal_memconfig.h',
++	'rte_errno.h',
++	'rte_hexdump.h',
++	'rte_interrupts.h',
++	'rte_keepalive.h',
++	'rte_launch.h',
++	'rte_lcore.h',
++	'rte_log.h',
++	'rte_malloc.h',
++	'rte_malloc_heap.h',
++	'rte_memory.h',
++	'rte_memzone.h',
++	'rte_pci_dev_feature_defs.h',
++	'rte_pci_dev_features.h',
++	'rte_pci.h',
++	'rte_per_lcore.h',
++	'rte_random.h',
++	'rte_service.h',
++	'rte_service_component.h',
++	'rte_string_fns.h',
++	'rte_tailq.h',
++	'rte_time.h',
++	'rte_vdev.h',
++	'rte_version.h']
++
++install_headers(common_headers)
++install_subdir('generic', install_dir : 'include')
++
++subdir('arch')
+diff --git a/lib/librte_eal/common/meson.build b/lib/librte_eal/common/meson.build
+new file mode 100644
+index 000000000..4a3e73f69
+--- /dev/null
++++ b/lib/librte_eal/common/meson.build
+@@ -0,0 +1,71 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc += include_directories('.')
++
++eal_common_sources = files(
++	'eal_common_bus.c',
++	'eal_common_cpuflags.c',
++	'eal_common_devargs.c',
++	'eal_common_dev.c',
++	'eal_common_errno.c',
++	'eal_common_hexdump.c',
++	'eal_common_launch.c',
++	'eal_common_lcore.c',
++	'eal_common_log.c',
++	'eal_common_memory.c',
++	'eal_common_memzone.c',
++	'eal_common_options.c',
++	'eal_common_pci.c',
++	'eal_common_pci_uio.c',
++	'eal_common_proc.c',
++	'eal_common_string_fns.c',
++	'eal_common_tailqs.c',
++	'eal_common_thread.c',
++	'eal_common_timer.c',
++	'eal_common_vdev.c',
++	'eal_filesystem.h',
++	'eal_hugepages.h',
++	'eal_internal_cfg.h',
++	'eal_options.h',
++	'eal_private.h',
++	'eal_thread.h',
++	'malloc_elem.c',
++	'malloc_elem.h',
++	'malloc_heap.c',
++	'malloc_heap.h',
++	'rte_keepalive.c',
++	'rte_malloc.c',
++	'rte_service.c'
++)
++
++subdir('arch')
++subdir('include')
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+new file mode 100644
+index 000000000..79fcff42f
+--- /dev/null
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -0,0 +1,62 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc += include_directories('include')
++install_subdir('include/exec-env', install_dir: 'include')
++
++sources = ['eal_alarm.c',
++		'eal_debug.c',
++		'eal_hugepage_info.c',
++		'eal_interrupts.c',
++		'eal_lcore.c',
++		'eal_log.c',
++		'eal_pci_uio.c',
++		'eal_pci_vfio.c',
++		'eal_thread.c',
++		'eal_timer.c',
++		'eal_vfio.c',
++		'eal_vfio_mp_sync.c',
++		'eal.c',
++		'eal_memory.c',
++		'eal_pci.c',
++]
++
++eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_sources,
++			dependencies: dependency('threads'),
++			include_directories : eal_inc,
++			c_args: '-D_GNU_SOURCE',
++			link_args: '-ldl',
++			install: true
++)
++
++dpdk_libraries += ['-pthread', '-ldl', eal_lib]
++
++rte_eal = declare_dependency(link_with: eal_lib, include_directories: eal_inc)
+diff --git a/lib/librte_eal/linuxapp/meson.build b/lib/librte_eal/linuxapp/meson.build
+new file mode 100644
+index 000000000..bc9f22175
+--- /dev/null
++++ b/lib/librte_eal/linuxapp/meson.build
+@@ -0,0 +1,32 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++subdir('eal')
+diff --git a/lib/librte_eal/meson.build b/lib/librte_eal/meson.build
+new file mode 100644
+index 000000000..f24799625
+--- /dev/null
++++ b/lib/librte_eal/meson.build
+@@ -0,0 +1,40 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++eal_inc = [global_inc]
++subdir('common')
++if host_machine.system() == 'linux'
++	subdir('linuxapp')
++elif host_machine.system() == 'freebsd'
++	subdir('bsdapp')
++else
++	error('unsupported system type @0@'.format(hostmachine.system()))
++endif
+diff --git a/lib/meson.build b/lib/meson.build
+new file mode 100644
+index 000000000..e7249bc8d
+--- /dev/null
++++ b/lib/meson.build
+@@ -0,0 +1,41 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++subdir('librte_eal')
++#subdir('librte_ring')
++#subdir('librte_mempool')
++#subdir('librte_cmdline')
++#subdir('librte_mbuf')
++#subdir('librte_net')
++#subdir('librte_ether')
++#subdir('librte_compat')
++#subdir('librte_hash')
++#subdir('librte_kvargs')
+diff --git a/meson.build b/meson.build
+index d7acf174d..d797bbbb2 100644
+--- a/meson.build
++++ b/meson.build
+@@ -54,6 +54,9 @@ endif
+ global_inc = include_directories('.', 'config')
+ subdir('config')
+ 
++# now build libs and drivers
++subdir('lib')
++
+ # write the build config
+ build_cfg = 'rte_build_config.h'
+ configure_file(output: build_cfg,
+diff --git a/meson_options.txt b/meson_options.txt
+index 94365567e..8f1db5330 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -1 +1,6 @@
+-option('machine', type : 'string', value : 'native', description : 'set the target machine type')
++option('machine', type: 'string', value: 'native', description: 'set the target machine type')
++option('max_lcores', type: 'string', value: '128', description: 'maximum number of cores/threads supported by EAL')
++option('max_numa_nodes', type: 'string', value: '4', description: 'maximum number of NUMA nodes supported by EAL')
++option('use_hpet', type: 'boolean', value: false, description: 'use HPET timer in EAL')
++option('allow_invalid_socket_id', type: 'boolean', value: false,
++	 description: 'allow out-of-range NUMA socket id\'s for platforms that don\'t report the value correctly')
+-- 
+2.11.0
+

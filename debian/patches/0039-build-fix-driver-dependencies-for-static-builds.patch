@@ -1,0 +1,595 @@
+From db9534e3f1bf23ef2ef7443edee5cb63ab2e8202 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:52:07 +0100
+Subject: [PATCH 39/40] build: fix driver dependencies for static builds
+
+For static builds we need to better track the dependencies of drivers,
+because, unlike with shared libs, the static libs don't track them
+themselves. Because of this we have a new global list of external
+dependencies which is used for creating the pkg-config file. We also move
+the logic for what dependencies a driver has, and if those deps are met,
+from the higher level build file to the drivers themselves.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/crypto/meson.build                         | 115 ++++++++++---------
+ drivers/crypto/openssl/meson.build                 |   7 +-
+ drivers/crypto/qat/meson.build                     |   7 +-
+ drivers/mempool/meson.build                        | 110 +++++++++---------
+ drivers/net/af_packet/meson.build                  |   3 +
+ drivers/net/ark/meson.build                        |   1 +
+ drivers/net/meson.build                            | 123 ++++++++++-----------
+ drivers/net/pcap/meson.build                       |  11 +-
+ lib/librte_eal/bsdapp/eal/meson.build              |   3 +-
+ lib/librte_eal/common/include/arch/x86/meson.build |   1 +
+ lib/librte_eal/linuxapp/eal/meson.build            |   3 +-
+ meson.build                                        |   4 +-
+ 12 files changed, 211 insertions(+), 177 deletions(-)
+
+diff --git a/drivers/crypto/meson.build b/drivers/crypto/meson.build
+index 495e9350c..d27889088 100644
+--- a/drivers/crypto/meson.build
++++ b/drivers/crypto/meson.build
+@@ -29,75 +29,80 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-crypto_drivers = ['null']
+-
+-libcrypto_dep = dependency('libcrypto', required: false)
+-if libcrypto_dep.found()
+-	crypto_drivers += ['qat', 'openssl']
+-endif
+-
+-foreach drv:crypto_drivers
+-	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
++drivers = ['null', 'qat', 'openssl']
++std_deps = ['cryptodev'] # cryptodev pulls in all other needed deps
+ 
++foreach drv:drivers
+ 	# set up empty variables used for build
++	build = true # set to false to disable, e.g. missing deps
+ 	version = 1
+ 	sources = []
+ 	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+-	# dependency managment. External deps managed using dependency
+-	# objects, internal deps managed by name of lib
++	# set up internal deps. Drivers can append/override as necessary
++	deps = std_deps
++	# ext_deps: Stores external library dependency got
++	# using dependency() or cc.find_library(). For most cases, we
++	# probably also need to specify the "-l" flags in
++	# pkgconfig_extra_libs variable too, so that it can be reflected
++	# in the pkgconfig output for static builds
+ 	ext_deps = []
+-	# set up standard deps. Drivers can append/override as necessary
+-	deps = ['mbuf', 'cryptodev', 'kvargs']
++	pkgconfig_extra_libs = []
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+ 
+-	# get dependency objs from strings
+-	dep_objs = ext_deps
+-	foreach d:deps
+-		dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
+-	endforeach
++	if build
++		dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
+ 
+-	# generate pmdinfo sources
+-	pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+-		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+-	foreach src: pmdinfogen_srcs
+-		out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
+-		tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
+-			src, include_directories: includes,
+-			dependencies: dep_objs,
+-			c_args: cflags)
+-		sources += custom_target(out_filename,
+-				command: [pmdinfo, tmp_lib.full_path(),
+-					'@OUTPUT@', pmdinfogen],
+-				output: out_filename,
+-				depends: [pmdinfogen, tmp_lib])
+-	endforeach
++		# get dependency objs from strings
++		dep_objs = []
++		foreach d:deps
++			dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
++		endforeach
++		dep_objs += ext_deps
++		dpdk_extra_ldflags += pkgconfig_extra_libs
+ 
+-	# now build the driver itself, and add to the drivers list
+-	drv_name = 'rte_pmd_@0@'.format(drv)
+-	version_map = '@0@/@1@/rte_pmd_@1@_version.map'.format(
+-			meson.current_source_dir(), drv)
+-	lib = library(drv_name,
+-		sources,
+-		objects: objs,
+-		include_directories: includes,
+-		dependencies: dep_objs,
+-		c_args: cflags,
+-		link_args: '-Wl,--version-script=' + version_map,
+-		link_depends: version_map,
+-		version: '@0@.1'.format(version),
+-		install: true,
+-		install_dir: driver_install_path)
++		# generate pmdinfo sources
++		pmdinfogen_srcs = run_command('grep', '--files-with-matches',
++			'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
++		foreach src: pmdinfogen_srcs
++			out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
++			tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
++				src, include_directories: includes,
++				dependencies: dep_objs,
++				c_args: cflags)
++			sources += custom_target(out_filename,
++					command: [pmdinfo, tmp_lib.full_path(),
++						'@OUTPUT@', pmdinfogen],
++					output: out_filename,
++					depends: [pmdinfogen, tmp_lib])
++		endforeach
+ 
+-	dpdk_drivers += lib
+-
+-	# create a dependency object and add it to the global dictionary so
+-	# testpmd or other built-in apps can find it if necessary
+-	set_variable('dep_rte_pmd_@0@'.format(drv),
+-			declare_dependency(link_with: lib,
++		# now build the driver itself, and add to the drivers list
++		drv_name = 'rte_pmd_@0@'.format(drv)
++		version_map = '@0@/@1@/rte_pmd_@1@_version.map'.format(
++				meson.current_source_dir(), drv)
++		lib = library(drv_name,
++			sources,
++			objects: objs,
+ 			include_directories: includes,
+-			dependencies: dep_objs))
++			dependencies: dep_objs,
++			c_args: cflags,
++			link_args: '-Wl,--version-script=' + version_map,
++			link_depends: version_map,
++			version: '@0@.1'.format(version),
++			install: true,
++			install_dir: driver_install_path)
++
++		dpdk_drivers += lib
++
++		# create a dependency object and add it to the global dictionary so
++		# testpmd or other built-in apps can find it if necessary
++		set_variable('dep_rte_pmd_@0@'.format(drv),
++				declare_dependency(link_with: lib,
++				include_directories: includes,
++				dependencies: dep_objs))
++	endif # build
+ endforeach
+diff --git a/drivers/crypto/openssl/meson.build b/drivers/crypto/openssl/meson.build
+index b4337f85e..eb7f10226 100644
+--- a/drivers/crypto/openssl/meson.build
++++ b/drivers/crypto/openssl/meson.build
+@@ -29,5 +29,10 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++dep = dependency('libcrypto', required: false)
++if not dep.found()
++	build = false
++endif
+ sources = files('rte_openssl_pmd.c', 'rte_openssl_pmd_ops.c')
+-ext_deps += libcrypto_dep
++ext_deps += dep
++pkgconfig_extra_libs += '-lcrypto'
+diff --git a/drivers/crypto/qat/meson.build b/drivers/crypto/qat/meson.build
+index aa124a0a0..7d959e7f5 100644
+--- a/drivers/crypto/qat/meson.build
++++ b/drivers/crypto/qat/meson.build
+@@ -29,8 +29,13 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++dep = dependency('libcrypto', required: false)
++if not dep.found()
++	build = false
++endif
+ sources = files('qat_crypto.c', 'qat_qp.c',
+ 		'qat_adf/qat_algs_build_desc.c',
+ 		'rte_qat_cryptodev.c')
+ includes += include_directories('qat_adf')
+-ext_deps += libcrypto_dep
++ext_deps += dep
++pkgconfig_extra_libs += '-lcrypto'
+diff --git a/drivers/mempool/meson.build b/drivers/mempool/meson.build
+index 32763b326..cdacbe9be 100644
+--- a/drivers/mempool/meson.build
++++ b/drivers/mempool/meson.build
+@@ -29,70 +29,80 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-mempool_drivers = ['ring', 'stack']
+-
+-foreach drv:mempool_drivers
+-	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
++drivers = ['ring', 'stack']
++std_deps = ['mempool']
+ 
++foreach drv:drivers
+ 	# set up empty variables used for build
++	build = true # set to false to disable, e.g. missing deps
+ 	version = 1
+ 	sources = []
+ 	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+-	# dependency managment. External deps managed using dependency
+-	# objects, internal deps managed by name of lib
++	# set up internal deps. Drivers can append/override as necessary
++	deps = std_deps
++	# ext_deps: Stores external library dependency got
++	# using dependency() or cc.find_library(). For most cases, we
++	# probably also need to specify the "-l" flags in
++	# pkgconfig_extra_libs variable too, so that it can be reflected
++	# in the pkgconfig output for static builds
+ 	ext_deps = []
+-	# set up standard deps. Drivers can append/override as necessary
+-	deps = ['eal', 'mempool', 'ring']
++	pkgconfig_extra_libs = []
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+ 
+-	# get dependency objs from strings
+-	dep_objs = ext_deps
+-	foreach d:deps
+-		dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
+-	endforeach
++	if build
++		dpdk_conf.set('RTE_LIBRTE_@0@_MEMPOOL'.format(drv.to_upper()),1)
+ 
+-	# generate pmdinfo sources
+-	pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+-		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+-	foreach src: pmdinfogen_srcs
+-		out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
+-		tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
+-			src, include_directories: includes,
+-			dependencies: dep_objs,
+-			c_args: cflags)
+-		sources += custom_target(out_filename,
+-				command: [pmdinfo, tmp_lib.full_path(),
+-					'@OUTPUT@', pmdinfogen],
+-				output: out_filename,
+-				depends: [pmdinfogen, tmp_lib])
+-	endforeach
++		# get dependency objs from strings
++		dep_objs = []
++		foreach d:deps
++			dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
++		endforeach
++		dep_objs += ext_deps
++		dpdk_extra_ldflags += pkgconfig_extra_libs
+ 
+-	# now build the driver itself, and add to the drivers list
+-	drv_name = 'rte_mempool_@0@'.format(drv)
+-	version_map = '@0@/@1@/rte_mempool_@1@_version.map'.format(
+-			meson.current_source_dir(), drv)
+-	lib = library(drv_name,
+-		sources,
+-		objects: objs,
+-		include_directories: includes,
+-		dependencies: dep_objs,
+-		c_args: cflags,
+-		link_args: '-Wl,--version-script=' + version_map,
+-		link_depends: version_map,
+-		version: '@0@.1'.format(version),
+-		install: true,
+-		install_dir: driver_install_path)
++		# generate pmdinfo sources
++		pmdinfogen_srcs = run_command('grep', '--files-with-matches',
++			'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
++		foreach src: pmdinfogen_srcs
++			out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
++			tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
++				src, include_directories: includes,
++				dependencies: dep_objs,
++				c_args: cflags)
++			sources += custom_target(out_filename,
++					command: [pmdinfo, tmp_lib.full_path(),
++						'@OUTPUT@', pmdinfogen],
++					output: out_filename,
++					depends: [pmdinfogen, tmp_lib])
++		endforeach
+ 
+-	dpdk_drivers += lib
+-
+-	# create a dependency object and add it to the global dictionary so
+-	# testpmd or other built-in apps can find it if necessary
+-	set_variable('dep_rte_mempool_@0@'.format(drv),
+-			declare_dependency(link_with: lib,
++		# now build the driver itself, and add to the drivers list
++		drv_name = 'rte_mempool_@0@'.format(drv)
++		version_map = '@0@/@1@/rte_mempool_@1@_version.map'.format(
++				meson.current_source_dir(), drv)
++		lib = library(drv_name,
++			sources,
++			objects: objs,
+ 			include_directories: includes,
+-			dependencies: dep_objs))
++			dependencies: dep_objs,
++			c_args: cflags,
++			link_args: '-Wl,--version-script=' + version_map,
++			link_depends: version_map,
++			version: '@0@.1'.format(version),
++			install: true,
++			install_dir: driver_install_path)
++
++		dpdk_drivers += lib
++
++		# create a dependency object and add it to the global dictionary so
++		# testpmd or other built-in apps can find it if necessary
++		set_variable('dep_rte_mempool_@0@'.format(drv),
++				declare_dependency(link_with: lib,
++				include_directories: includes,
++				dependencies: dep_objs))
++	endif # build
+ endforeach
+diff --git a/drivers/net/af_packet/meson.build b/drivers/net/af_packet/meson.build
+index 56ba22e73..c0dcc9b1f 100644
+--- a/drivers/net/af_packet/meson.build
++++ b/drivers/net/af_packet/meson.build
+@@ -29,4 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++if host_machine.system() != 'linux'
++	build = false
++endif
+ sources = files('rte_eth_af_packet.c')
+diff --git a/drivers/net/ark/meson.build b/drivers/net/ark/meson.build
+index a94d70383..385413af1 100644
+--- a/drivers/net/ark/meson.build
++++ b/drivers/net/ark/meson.build
+@@ -41,4 +41,5 @@ sources = files('ark_ddm.c',
+ 		'ark_udm.c')
+ if host_machine.system() == 'linux'
+ 	ext_deps += cc.find_library('dl')
++	pkgconfig_extra_libs += '-ldl'
+ endif
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 2fb7577fa..cf06edce8 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -29,83 +29,80 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-net_drivers = ['ark', 'avp', 'i40e', 'ixgbe']
+-
+-# af_packet only works on linux
+-if host_machine.system() == 'linux'
+-	net_drivers += 'af_packet'
+-endif
+-
+-pcap_dep = dependency('pcap', required: false)
+-# pcap doesn't use pkg-config, but future meson versions should support picking
+-# it up as a dependency. For older versions <0.42 use find_program instead
+-if pcap_dep.found() or find_program('pcap-config', required: false).found()
+-	net_drivers += 'pcap'
+-endif
+-
+-foreach drv:net_drivers
+-	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
++drivers = ['af_packet', 'ark', 'avp', 'i40e', 'ixgbe', 'pcap']
++std_deps = ['ether', 'kvargs'] 	# 'ether' as dep, also pulls in mbuf, net, mempool, eal etc
+ 
++foreach drv:drivers
+ 	# set up empty variables used for build
++	build = true # set to false to disable, e.g. missing deps
+ 	version = 1
+ 	sources = []
+ 	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+-	# dependency managment. External deps managed using dependency
+-	# objects, internal deps managed by name of lib
++	# set up internal deps. Drivers can append/override as necessary
++	deps = std_deps
++	# ext_deps: Stores external library dependency got
++	# using dependency() or cc.find_library(). For most cases, we
++	# probably also need to specify the "-l" flags in
++	# pkgconfig_extra_libs variable too, so that it can be reflected
++	# in the pkgconfig output for static builds
+ 	ext_deps = []
+-	# set up standard deps. Drivers can append/override as necessary
+-	# 'ether' as dep, also pulls in mbuf, net, mempool, ring, eal etc
+-	deps = ['ether', 'kvargs']
++	pkgconfig_extra_libs = []
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+ 
+-	# get dependency objs from strings
+-	dep_objs = ext_deps
+-	foreach d:deps
+-		dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
+-	endforeach
++	if build
++		dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
+ 
+-	# generate pmdinfo sources
+-	pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+-		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+-	foreach src: pmdinfogen_srcs
+-		out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
+-		tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
+-			src, include_directories: includes,
+-			dependencies: dep_objs,
+-			c_args: cflags)
+-		sources += custom_target(out_filename,
+-				command: [pmdinfo, tmp_lib.full_path(),
+-					'@OUTPUT@', pmdinfogen],
+-				output: out_filename,
+-				depends: [pmdinfogen, tmp_lib])
+-	endforeach
++		# get dependency objs from strings
++		dep_objs = []
++		foreach d:deps
++			dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
++		endforeach
++		dep_objs += ext_deps
++		dpdk_extra_ldflags += pkgconfig_extra_libs
+ 
+-	# now build the driver itself, and add to the drivers list
+-	drv_name = 'rte_pmd_@0@'.format(drv)
+-	version_map = '@0@/@1@/rte_pmd_@1@_version.map'.format(
+-			meson.current_source_dir(), drv)
+-	lib = library(drv_name,
+-		sources,
+-		objects: objs,
+-		include_directories: includes,
+-		dependencies: dep_objs,
+-		c_args: cflags,
+-		link_args: '-Wl,--version-script=' + version_map,
+-		link_depends: version_map,
+-		version: '@0@.1'.format(version),
+-		install: true,
+-		install_dir: driver_install_path)
++		# generate pmdinfo sources
++		pmdinfogen_srcs = run_command('grep', '--files-with-matches',
++			'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
++		foreach src: pmdinfogen_srcs
++			out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
++			tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
++				src, include_directories: includes,
++				dependencies: dep_objs,
++				c_args: cflags)
++			sources += custom_target(out_filename,
++					command: [pmdinfo, tmp_lib.full_path(),
++						'@OUTPUT@', pmdinfogen],
++					output: out_filename,
++					depends: [pmdinfogen, tmp_lib])
++		endforeach
+ 
+-	dpdk_drivers += lib
+-
+-	# create a dependency object and add it to the global dictionary so
+-	# testpmd or other built-in apps can find it if necessary
+-	set_variable('dep_rte_pmd_@0@'.format(drv),
+-			declare_dependency(link_with: lib,
++		# now build the driver itself, and add to the drivers list
++		drv_name = 'rte_pmd_@0@'.format(drv)
++		version_map = '@0@/@1@/rte_pmd_@1@_version.map'.format(
++				meson.current_source_dir(), drv)
++		lib = library(drv_name,
++			sources,
++			objects: objs,
+ 			include_directories: includes,
+-			dependencies: dep_objs))
++			dependencies: dep_objs,
++			c_args: cflags,
++			link_args: '-Wl,--version-script=' + version_map,
++			link_depends: version_map,
++			version: '@0@.1'.format(version),
++			install: true,
++			install_dir: driver_install_path)
++
++		dpdk_drivers += lib
++
++		# create a dependency object and add it to the global dictionary so
++		# testpmd or other built-in apps can find it if necessary
++		set_variable('dep_rte_pmd_@0@'.format(drv),
++				declare_dependency(link_with: lib,
++				include_directories: includes,
++				dependencies: dep_objs))
++	endif # build
+ endforeach
+diff --git a/drivers/net/pcap/meson.build b/drivers/net/pcap/meson.build
+index a61668236..2cfe76410 100644
+--- a/drivers/net/pcap/meson.build
++++ b/drivers/net/pcap/meson.build
+@@ -29,10 +29,13 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-sources = files('rte_eth_pcap.c')
+-
+-if pcap_dep.found()
++pcap_dep = dependency('pcap', required: false)
++if pcap_dep.found() == true
+ 	ext_deps += pcap_dep
+-else
++elif find_program('pcap-config', required: false).found() == true
+ 	ext_deps += cc.find_library('pcap')
++else
++	build = false
+ endif
++sources = files('rte_eth_pcap.c')
++pkgconfig_extra_libs += '-lpcap'
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index 96ad1cef7..bc9c3f0cb 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -58,7 +58,8 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 			install: true
+ )
+ 
+-dpdk_libraries += [eal_lib, '-pthread', eal_extra_link_arg]
++dpdk_libraries += eal_lib
++dpdk_extra_ldflags += ['-pthread', eal_extra_link_arg]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib,
+ 		include_directories: eal_inc,
+diff --git a/lib/librte_eal/common/include/arch/x86/meson.build b/lib/librte_eal/common/include/arch/x86/meson.build
+index bd162938c..ad0949a92 100644
+--- a/lib/librte_eal/common/include/arch/x86/meson.build
++++ b/lib/librte_eal/common/include/arch/x86/meson.build
+@@ -41,6 +41,7 @@ install_headers(
+ 	'rte_io.h',
+ 	'rte_memcpy.h',
+ 	'rte_prefetch.h',
++	'rte_pause.h',
+ 	'rte_rtm.h',
+ 	'rte_rwlock.h',
+ 	'rte_spinlock.h',
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index 30741519b..886bcbf0e 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -63,7 +63,8 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 			install: true
+ )
+ 
+-dpdk_libraries += [eal_lib, '-pthread', eal_extra_link_arg]
++dpdk_libraries += eal_lib
++dpdk_extra_ldflags += ['-pthread', eal_extra_link_arg]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib,
+ 		include_directories: eal_inc,
+diff --git a/meson.build b/meson.build
+index dfcead92a..ca495ec7e 100644
+--- a/meson.build
++++ b/meson.build
+@@ -41,6 +41,7 @@ cc = meson.get_compiler('c')
+ dpdk_conf = configuration_data()
+ dpdk_libraries = []
+ dpdk_drivers = []
++dpdk_extra_ldflags = []
+ 
+ # for static libs, treat the drivers as regular libraries, otherwise
+ # for shared libs, put them in a driver folder
+@@ -74,7 +75,8 @@ configure_file(output: build_cfg,
+ # for static builds, include the drivers as libs, and also any
+ # other dependent libs that DPDK needs to link against
+ if get_option('default_library') == 'static'
+-	dpdk_libraries = dpdk_drivers + dpdk_libraries
++	dpdk_drivers = ['-Wl,--whole-archive'] + dpdk_drivers + ['-Wl,--no-whole-archive']
++	dpdk_libraries = dpdk_drivers + dpdk_libraries + dpdk_extra_ldflags
+ endif
+ 
+ pkg = import('pkgconfig')
+-- 
+2.11.0
+

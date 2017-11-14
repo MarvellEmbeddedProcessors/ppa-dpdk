@@ -1,0 +1,44 @@
+From 54220675c0fcfd5407a0a40a930ad051a4ba7ae8 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:36 +0100
+Subject: [PATCH 08/40] build: generate list of sources for pmdinfogen
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/i40e/meson.build | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index 1e23e0820..a6d0bf4e4 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -36,7 +36,7 @@ i40e_cflags = ['-DPF_DRIVER',
+ 
+ subdir('base')
+ 
+-sources = [
++sources = files(
+ 	'i40e_ethdev.c',
+ 	'i40e_rxtx.c',
+ 	'i40e_ethdev_vf.c',
+@@ -45,12 +45,15 @@ sources = [
+ 	'i40e_flow.c',
+ 	'i40e_tm.c',
+ 	'rte_pmd_i40e.c'
+-	]
++	)
+ 
+ if arch_subdir == 'x86'
+-	sources += 'i40e_rxtx_vec_sse.c'
++	sources += files('i40e_rxtx_vec_sse.c')
+ endif
+ 
++pmdinfogen_srcs = run_command('grep', '--files-with-matches', 'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
++message(pmdinfogen_srcs)
++
+ install_headers('rte_pmd_i40e.h')
+ 
+ i40e_lib = library('rte_pmd_i40e', sources,
+-- 
+2.11.0
+

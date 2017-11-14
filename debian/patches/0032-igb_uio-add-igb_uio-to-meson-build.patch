@@ -1,0 +1,109 @@
+From 52184c61cb8f51f133679ad737ea30a25724713c Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:52:00 +0100
+Subject: [PATCH 32/40] igb_uio: add igb_uio to meson build
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ lib/librte_eal/linuxapp/igb_uio/Kbuild      |  1 +
+ lib/librte_eal/linuxapp/igb_uio/meson.build | 47 +++++++++++++++++++++++++++++
+ lib/librte_eal/linuxapp/meson.build         | 10 ++++++
+ meson_options.txt                           |  4 ++-
+ 4 files changed, 61 insertions(+), 1 deletion(-)
+ create mode 100644 lib/librte_eal/linuxapp/igb_uio/Kbuild
+ create mode 100644 lib/librte_eal/linuxapp/igb_uio/meson.build
+
+diff --git a/lib/librte_eal/linuxapp/igb_uio/Kbuild b/lib/librte_eal/linuxapp/igb_uio/Kbuild
+new file mode 100644
+index 000000000..98c98fe52
+--- /dev/null
++++ b/lib/librte_eal/linuxapp/igb_uio/Kbuild
+@@ -0,0 +1 @@
++obj-m := igb_uio.o
+diff --git a/lib/librte_eal/linuxapp/igb_uio/meson.build b/lib/librte_eal/linuxapp/igb_uio/meson.build
+new file mode 100644
+index 000000000..c046e1d66
+--- /dev/null
++++ b/lib/librte_eal/linuxapp/igb_uio/meson.build
+@@ -0,0 +1,47 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++mkfile = custom_target('igb_uio_makefile',
++	output: 'Makefile',
++	command: ['touch', '@OUTPUT@'])
++
++custom_target('igb_uio',
++	input: ['igb_uio.c', 'Kbuild'],
++	output: 'igb_uio.ko',
++	command: ['make', '-C', kernel_dir,
++		'M=' + meson.current_build_dir(),
++		'src=' + meson.current_source_dir(),
++		'EXTRA_CFLAGS=-I' + meson.current_source_dir() +
++			'/../../common/include',
++		'modules'],
++	depends: mkfile,
++#	depend_files: [join_paths(kernel_dir, 'Kconfig')],
++	build_by_default: true)
+diff --git a/lib/librte_eal/linuxapp/meson.build b/lib/librte_eal/linuxapp/meson.build
+index bc9f22175..88164f297 100644
+--- a/lib/librte_eal/linuxapp/meson.build
++++ b/lib/librte_eal/linuxapp/meson.build
+@@ -30,3 +30,13 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ subdir('eal')
++
++if get_option('enable_kmods')
++	kernel_dir = get_option('kernel_dir')
++	if kernel_dir == ''
++		kernel_version = run_command('uname', '-r').stdout().strip()
++		kernel_dir = '/lib/modules/' + kernel_version + '/build'
++	endif
++
++	subdir('igb_uio')
++endif
+\ No newline at end of file
+diff --git a/meson_options.txt b/meson_options.txt
+index 8f1db5330..9c45b8159 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -3,4 +3,6 @@ option('max_lcores', type: 'string', value: '128', description: 'maximum number
+ option('max_numa_nodes', type: 'string', value: '4', description: 'maximum number of NUMA nodes supported by EAL')
+ option('use_hpet', type: 'boolean', value: false, description: 'use HPET timer in EAL')
+ option('allow_invalid_socket_id', type: 'boolean', value: false,
+-	 description: 'allow out-of-range NUMA socket id\'s for platforms that don\'t report the value correctly')
++	description: 'allow out-of-range NUMA socket id\'s for platforms that don\'t report the value correctly')
++option('enable_kmods', type: 'boolean', value: true, description: 'build kernel modules')
++option('kernel_dir', type: 'string', value: '', description: 'path to the kernel for building kernel modules')
+-- 
+2.11.0
+

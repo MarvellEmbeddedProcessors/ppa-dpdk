@@ -1,0 +1,32 @@
+From ddbaebbc7d441edaeb7cc0e9dfc7c952bb288823 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:57 +0100
+Subject: [PATCH 29/40] crypto/null: rename the version file to standard
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/crypto/null/Makefile                                            | 2 +-
+ .../null/{rte_pmd_null_crypto_version.map => rte_pmd_null_version.map}  | 0
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+ rename drivers/crypto/null/{rte_pmd_null_crypto_version.map => rte_pmd_null_version.map} (100%)
+
+diff --git a/drivers/crypto/null/Makefile b/drivers/crypto/null/Makefile
+index bc2724b39..b12b6f797 100644
+--- a/drivers/crypto/null/Makefile
++++ b/drivers/crypto/null/Makefile
+@@ -42,7 +42,7 @@ CFLAGS += $(WERROR_FLAGS)
+ LIBABIVER := 1
+ 
+ # versioning export map
+-EXPORT_MAP := rte_pmd_null_crypto_version.map
++EXPORT_MAP := rte_pmd_null_version.map
+ 
+ # library source files
+ SRCS-$(CONFIG_RTE_LIBRTE_PMD_NULL_CRYPTO) += null_crypto_pmd.c
+diff --git a/drivers/crypto/null/rte_pmd_null_crypto_version.map b/drivers/crypto/null/rte_pmd_null_version.map
+similarity index 100%
+rename from drivers/crypto/null/rte_pmd_null_crypto_version.map
+rename to drivers/crypto/null/rte_pmd_null_version.map
+-- 
+2.11.0
+

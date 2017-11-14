@@ -1,0 +1,62 @@
+From cc0ed2473edc073297af5cb21ff1aa4bbab60c71 Mon Sep 17 00:00:00 2001
+From: Jerin Jacob <jerin.jacob@caviumnetworks.com>
+Date: Fri, 9 Jun 2017 15:57:45 +0530
+Subject: [PATCH 1/2] eal/pci: introduce a PCI driver flag
+
+Some ethdev devices like nicvf thunderx PMD need special treatment for
+Secondary queue set(SQS) PCIe VF devices, where, it expects to not unmap
+or free the memory without registering the ethdev subsystem.
+
+Introducing a new RTE_PCI_DRV_KEEP_MAPPED_RES
+PCI driver flag to request PCI subsystem to not unmap the mapped PCI
+resources(PCI BAR address) if unsupported device detected.
+
+Suggested-by: Ferruh Yigit <ferruh.yigit@intel.com>
+Signed-off-by: Jerin Jacob <jerin.jacob@caviumnetworks.com>
+Reviewed-by: Ferruh Yigit <ferruh.yigit@intel.com>
+
+Forwarded: no (backport)
+Author: Christian Ehrhardt <christian.ehrhardt@canonical.com>
+Original-Author: Jerin Jacob <jerin.jacob@caviumnetworks.com>
+Origin: http://dpdk.org/browse/dpdk/commit/?id=cc0ed2473edc073297af5cb21ff1aa4bbab60c71
+Bug-Ubuntu: https://bugs.launchpad.net/bugs/1716666
+Last-Update: 2017-09-12
+---
+ lib/librte_eal/common/eal_common_pci.c  | 7 ++++++-
+ lib/librte_eal/common/include/rte_pci.h | 2 ++
+ 2 files changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/lib/librte_eal/common/eal_common_pci.c b/lib/librte_eal/common/eal_common_pci.c
+index 5ae5201..78b097e 100644
+--- a/lib/librte_eal/common/eal_common_pci.c
++++ b/lib/librte_eal/common/eal_common_pci.c
+@@ -221,7 +221,12 @@ rte_pci_probe_one_driver(struct rte_pci_driver *dr,
+ 	ret = dr->probe(dr, dev);
+ 	if (ret) {
+ 		dev->driver = NULL;
+-		if (dr->drv_flags & RTE_PCI_DRV_NEED_MAPPING)
++		if ((dr->drv_flags & RTE_PCI_DRV_NEED_MAPPING) &&
++			/* Don't unmap if device is unsupported and
++			 * driver needs mapped resources.
++			 */
++			!(ret > 0 &&
++				(dr->drv_flags & RTE_PCI_DRV_KEEP_MAPPED_RES)))
+ 			rte_pci_unmap_device(dev);
+ 	}
+ 
+diff --git a/lib/librte_eal/common/include/rte_pci.h b/lib/librte_eal/common/include/rte_pci.h
+index b82ab9e..0284a62 100644
+--- a/lib/librte_eal/common/include/rte_pci.h
++++ b/lib/librte_eal/common/include/rte_pci.h
+@@ -212,6 +212,8 @@ struct rte_pci_bus {
+ #define RTE_PCI_DRV_INTR_LSC	0x0008
+ /** Device driver supports device removal interrupt */
+ #define RTE_PCI_DRV_INTR_RMV 0x0010
++/** Device driver needs to keep mapped resources if unsupported dev detected */
++#define RTE_PCI_DRV_KEEP_MAPPED_RES 0x0020
+ 
+ /**
+  * A structure describing a PCI mapping.
+-- 
+2.7.4
+

@@ -1,0 +1,147 @@
+From 4822b151698786a8d719829a9da509cf5cf79987 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:52:06 +0100
+Subject: [PATCH 38/40] build: fix static library builds with base code
+
+for static library builds, we miss the base code, as the base code .a file
+is not included in the overall driver .a file. Instead mark the objects in
+the base code lib to be included in the overall library.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/crypto/meson.build         | 6 +++---
+ drivers/mempool/meson.build        | 4 ++--
+ drivers/net/i40e/base/meson.build  | 1 +
+ drivers/net/i40e/meson.build       | 2 +-
+ drivers/net/ixgbe/base/meson.build | 1 +
+ drivers/net/ixgbe/meson.build      | 2 +-
+ drivers/net/meson.build            | 4 ++--
+ 7 files changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/drivers/crypto/meson.build b/drivers/crypto/meson.build
+index c26e3d387..495e9350c 100644
+--- a/drivers/crypto/meson.build
++++ b/drivers/crypto/meson.build
+@@ -42,14 +42,14 @@ foreach drv:crypto_drivers
+ 	# set up empty variables used for build
+ 	version = 1
+ 	sources = []
+-	libs = []
++	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+ 	# dependency managment. External deps managed using dependency
+ 	# objects, internal deps managed by name of lib
+ 	ext_deps = []
+ 	# set up standard deps. Drivers can append/override as necessary
+-	deps = ['eal', 'mbuf', 'cryptodev', 'mempool', 'kvargs']
++	deps = ['mbuf', 'cryptodev', 'kvargs']
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+@@ -82,9 +82,9 @@ foreach drv:crypto_drivers
+ 			meson.current_source_dir(), drv)
+ 	lib = library(drv_name,
+ 		sources,
++		objects: objs,
+ 		include_directories: includes,
+ 		dependencies: dep_objs,
+-		link_with: libs,
+ 		c_args: cflags,
+ 		link_args: '-Wl,--version-script=' + version_map,
+ 		link_depends: version_map,
+diff --git a/drivers/mempool/meson.build b/drivers/mempool/meson.build
+index a426b8f92..32763b326 100644
+--- a/drivers/mempool/meson.build
++++ b/drivers/mempool/meson.build
+@@ -37,7 +37,7 @@ foreach drv:mempool_drivers
+ 	# set up empty variables used for build
+ 	version = 1
+ 	sources = []
+-	libs = []
++	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+ 	# dependency managment. External deps managed using dependency
+@@ -77,9 +77,9 @@ foreach drv:mempool_drivers
+ 			meson.current_source_dir(), drv)
+ 	lib = library(drv_name,
+ 		sources,
++		objects: objs,
+ 		include_directories: includes,
+ 		dependencies: dep_objs,
+-		link_with: libs,
+ 		c_args: cflags,
+ 		link_args: '-Wl,--version-script=' + version_map,
+ 		link_depends: version_map,
+diff --git a/drivers/net/i40e/base/meson.build b/drivers/net/i40e/base/meson.build
+index 69f55497e..ef19e358d 100644
+--- a/drivers/net/i40e/base/meson.build
++++ b/drivers/net/i40e/base/meson.build
+@@ -53,3 +53,4 @@ endforeach
+ base_lib = static_library('i40e_base', sources,
+ 	dependencies: rte_eal,
+ 	c_args: c_args)
++base_objs = base_lib.extract_all_objects()
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index dcc832b6f..da3f0b6dc 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -35,7 +35,7 @@ cflags = ['-DPF_DRIVER',
+ 	'-DX722_A0_SUPPORT']
+ 
+ subdir('base')
+-libs = [base_lib]
++objs = [base_objs]
+ 
+ sources = files(
+ 	'i40e_ethdev.c',
+diff --git a/drivers/net/ixgbe/base/meson.build b/drivers/net/ixgbe/base/meson.build
+index d5fb435e4..2f3fe0491 100644
+--- a/drivers/net/ixgbe/base/meson.build
++++ b/drivers/net/ixgbe/base/meson.build
+@@ -57,3 +57,4 @@ endforeach
+ base_lib = static_library('ixgbe_base', sources,
+ 	dependencies: rte_eal,
+ 	c_args: c_args)
++base_objs = base_lib.extract_all_objects()
+diff --git a/drivers/net/ixgbe/meson.build b/drivers/net/ixgbe/meson.build
+index 3e164f97f..32c10a5e2 100644
+--- a/drivers/net/ixgbe/meson.build
++++ b/drivers/net/ixgbe/meson.build
+@@ -32,7 +32,7 @@
+ cflags = ['-DRTE_LIBRTE_IXGBE_BYPASS']
+ 
+ subdir('base')
+-libs = [base_lib]
++objs = [base_objs]
+ 
+ sources = files(
+ 	'ixgbe_82599_bypass.c',
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 0c804d073..2fb7577fa 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -49,7 +49,7 @@ foreach drv:net_drivers
+ 	# set up empty variables used for build
+ 	version = 1
+ 	sources = []
+-	libs = []
++	objs = []
+ 	cflags = []
+ 	includes = [include_directories(drv)]
+ 	# dependency managment. External deps managed using dependency
+@@ -90,9 +90,9 @@ foreach drv:net_drivers
+ 			meson.current_source_dir(), drv)
+ 	lib = library(drv_name,
+ 		sources,
++		objects: objs,
+ 		include_directories: includes,
+ 		dependencies: dep_objs,
+-		link_with: libs,
+ 		c_args: cflags,
+ 		link_args: '-Wl,--version-script=' + version_map,
+ 		link_depends: version_map,
+-- 
+2.11.0
+

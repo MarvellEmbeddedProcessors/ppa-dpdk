@@ -1,0 +1,25 @@
+From 46ae1b72829d4a0c1eaa04923b9390c81892dab2 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:58 +0100
+Subject: [PATCH 30/40] crypto/qat: remove dependency on ether library
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/crypto/qat/qat_crypto.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/drivers/crypto/qat/qat_crypto.c b/drivers/crypto/qat/qat_crypto.c
+index 1f52cabfd..62ee175ba 100644
+--- a/drivers/crypto/qat/qat_crypto.c
++++ b/drivers/crypto/qat/qat_crypto.c
+@@ -46,7 +46,6 @@
+ #include <rte_memory.h>
+ #include <rte_memzone.h>
+ #include <rte_tailq.h>
+-#include <rte_ether.h>
+ #include <rte_malloc.h>
+ #include <rte_launch.h>
+ #include <rte_eal.h>
+-- 
+2.11.0
+

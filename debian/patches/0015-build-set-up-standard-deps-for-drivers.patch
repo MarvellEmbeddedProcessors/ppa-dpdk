@@ -1,0 +1,83 @@
+From b1560ccd3b88beb11e5d0338caf382c0dfe91a4a Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:43 +0100
+Subject: [PATCH 15/40] build: set up standard deps for drivers
+
+Driver should not need to specify that they depend on EAL, mempool, mbuf
+etc., since all drivers are likely to depend on those. Instead, have it
+that drivers only need to append to the deps array any extra dependencies
+they have.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/i40e/meson.build  | 7 ++-----
+ drivers/net/ixgbe/meson.build | 7 ++-----
+ drivers/net/meson.build       | 4 +++-
+ 3 files changed, 7 insertions(+), 11 deletions(-)
+
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index ea7f73d8e..3786af1ed 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -48,17 +48,14 @@ sources = files(
+ 	'rte_pmd_i40e.c'
+ 	)
+ 
+-deps = [rte_eal, rte_net,
+-	rte_mbuf, rte_ether,
+-	rte_mempool, rte_ring,
+-	rte_hash, rte_kvargs]
++deps += rte_hash
+ 
+ if arch_subdir == 'x86'
+ 	dpdk_conf.set('RTE_LIBRTE_I40E_INC_VECTOR', 1)
+ 	sources += files('i40e_rxtx_vec_sse.c')
+ endif
+ 
+-includes = include_directories('base', '.')
++includes = include_directories('base')
+ 
+ install_headers('rte_pmd_i40e.h')
+ 
+diff --git a/drivers/net/ixgbe/meson.build b/drivers/net/ixgbe/meson.build
+index b1efd96be..65c215271 100644
+--- a/drivers/net/ixgbe/meson.build
++++ b/drivers/net/ixgbe/meson.build
+@@ -46,16 +46,13 @@ sources = files(
+ 	'rte_pmd_ixgbe.c'
+ )
+ 
+-deps = [rte_eal, rte_net,
+-	rte_mbuf, rte_ether,
+-	rte_mempool, rte_ring,
+-	rte_hash, rte_kvargs]
++deps += rte_hash
+ 
+ if arch_subdir == 'x86'
+ 	dpdk_conf.set('RTE_IXGBE_INC_VECTOR', 1)
+ 	sources += files('ixgbe_rxtx_vec_sse.c')
+ endif
+ 
+-includes = include_directories('base', '.')
++includes = include_directories('base')
+ 
+ install_headers('rte_pmd_ixgbe.h')
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index eccdc83d7..c1728e700 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -38,8 +38,10 @@ foreach drv:drivers
+ 	sources = []
+ 	libs = []
+ 	cflags = []
+-	deps = []
+ 	includes = []
++	# set up standard deps. Drivers can append/override as necessary
++	deps = [rte_eal, rte_net, rte_mbuf, rte_ether,
++		rte_mempool, rte_ring, rte_kvargs]
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+-- 
+2.11.0
+

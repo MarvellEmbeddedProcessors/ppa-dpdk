@@ -1,0 +1,172 @@
+From b6f5631fbe528ee5b40077b2a6c632bf531349f6 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:42 +0100
+Subject: [PATCH 14/40] build: add ixgbe driver to build
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/ixgbe/base/meson.build | 59 ++++++++++++++++++++++++++++++++++++
+ drivers/net/ixgbe/meson.build      | 61 ++++++++++++++++++++++++++++++++++++++
+ drivers/net/meson.build            |  5 ++--
+ 3 files changed, 123 insertions(+), 2 deletions(-)
+ create mode 100644 drivers/net/ixgbe/base/meson.build
+ create mode 100644 drivers/net/ixgbe/meson.build
+
+diff --git a/drivers/net/ixgbe/base/meson.build b/drivers/net/ixgbe/base/meson.build
+new file mode 100644
+index 000000000..d5fb435e4
+--- /dev/null
++++ b/drivers/net/ixgbe/base/meson.build
+@@ -0,0 +1,59 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++sources = [
++	'ixgbe_82598.c',
++	'ixgbe_82599.c',
++	'ixgbe_api.c',
++	'ixgbe_common.c',
++	'ixgbe_dcb_82598.c',
++	'ixgbe_dcb_82599.c',
++	'ixgbe_dcb.c',
++	'ixgbe_hv_vf.c',
++	'ixgbe_mbx.c',
++	'ixgbe_phy.c',
++	'ixgbe_vf.c',
++	'ixgbe_x540.c',
++	'ixgbe_x550.c'
++]
++
++error_cflags = ['-Wno-unused-value',
++		'-Wno-unused-but-set-variable']
++c_args = cflags
++foreach flag: error_cflags
++	if cc.has_argument(flag)
++		c_args += flag
++	endif
++endforeach
++
++base_lib = static_library('ixgbe_base', sources,
++	dependencies: rte_eal,
++	c_args: c_args)
+diff --git a/drivers/net/ixgbe/meson.build b/drivers/net/ixgbe/meson.build
+new file mode 100644
+index 000000000..b1efd96be
+--- /dev/null
++++ b/drivers/net/ixgbe/meson.build
+@@ -0,0 +1,61 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++cflags = ['-DRTE_LIBRTE_IXGBE_BYPASS']
++
++subdir('base')
++libs = [base_lib]
++
++sources = files(
++	'ixgbe_82599_bypass.c',
++	'ixgbe_bypass.c',
++	'ixgbe_ethdev.c',
++	'ixgbe_fdir.c',
++	'ixgbe_flow.c',
++	'ixgbe_pf.c',
++	'ixgbe_rxtx.c',
++	'ixgbe_tm.c',
++	'rte_pmd_ixgbe.c'
++)
++
++deps = [rte_eal, rte_net,
++	rte_mbuf, rte_ether,
++	rte_mempool, rte_ring,
++	rte_hash, rte_kvargs]
++
++if arch_subdir == 'x86'
++	dpdk_conf.set('RTE_IXGBE_INC_VECTOR', 1)
++	sources += files('ixgbe_rxtx_vec_sse.c')
++endif
++
++includes = include_directories('base', '.')
++
++install_headers('rte_pmd_ixgbe.h')
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index db242d71b..eccdc83d7 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -29,7 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-drivers = ['i40e']
++drivers = ['i40e', 'ixgbe']
+ 
+ foreach drv:drivers
+ 	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
+@@ -60,7 +60,8 @@ foreach drv:drivers
+ 	endforeach
+ 
+ 	# now build the driver itself, and add to the drivers list
+-	lib = library('rte_pmd_@0@'.format(drv), sources,
++	lib = library('rte_pmd_@0@'.format(drv),
++		sources,
+ 		include_directories: includes,
+ 		dependencies: deps,
+ 		link_with: libs,
+-- 
+2.11.0
+

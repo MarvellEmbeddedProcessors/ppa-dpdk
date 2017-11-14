@@ -1,0 +1,559 @@
+From fc8a5ab22d4fd1e9850bfbaea469a2905601dba8 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:33 +0100
+Subject: [PATCH 05/40] build: add core libraries to meson build system
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ config/rte_config.h            | 14 ++++++++++
+ lib/librte_cmdline/meson.build | 63 ++++++++++++++++++++++++++++++++++++++++++
+ lib/librte_compat/meson.build  | 35 +++++++++++++++++++++++
+ lib/librte_ether/meson.build   | 49 ++++++++++++++++++++++++++++++++
+ lib/librte_hash/meson.build    | 54 ++++++++++++++++++++++++++++++++++++
+ lib/librte_kvargs/meson.build  | 43 ++++++++++++++++++++++++++++
+ lib/librte_mbuf/meson.build    | 42 ++++++++++++++++++++++++++++
+ lib/librte_mempool/meson.build | 43 ++++++++++++++++++++++++++++
+ lib/librte_net/meson.build     | 52 ++++++++++++++++++++++++++++++++++
+ lib/librte_ring/meson.build    | 43 ++++++++++++++++++++++++++++
+ lib/meson.build                | 18 ++++++------
+ 11 files changed, 447 insertions(+), 9 deletions(-)
+ create mode 100644 lib/librte_cmdline/meson.build
+ create mode 100644 lib/librte_compat/meson.build
+ create mode 100644 lib/librte_ether/meson.build
+ create mode 100644 lib/librte_hash/meson.build
+ create mode 100644 lib/librte_kvargs/meson.build
+ create mode 100644 lib/librte_mbuf/meson.build
+ create mode 100644 lib/librte_mempool/meson.build
+ create mode 100644 lib/librte_net/meson.build
+ create mode 100644 lib/librte_ring/meson.build
+
+diff --git a/config/rte_config.h b/config/rte_config.h
+index 7724ebcbe..4d5f7214c 100644
+--- a/config/rte_config.h
++++ b/config/rte_config.h
+@@ -56,4 +56,18 @@
+ #define RTE_BACKTRACE 1
+ #define RTE_EAL_VFIO 1
+ 
++/* mempool defines */
++#define RTE_MEMPOOL_CACHE_MAX_SIZE 512
++
++/* mbuf defines */
++#define RTE_MBUF_DEFAULT_MEMPOOL_OPS "ring_mp_mc"
++#define RTE_MBUF_REFCNT_ATOMIC 1
++#define RTE_PKTMBUF_HEADROOM 128
++
++/* ether defines */
++#define RTE_MAX_ETHPORTS 32
++#define RTE_MAX_QUEUES_PER_PORT 1024
++#define RTE_ETHDEV_QUEUE_STAT_CNTRS 16
++#define RTE_ETHDEV_RXTX_CALLBACKS 1
++
+ #endif /* _RTE_CONFIG_H_ */
+diff --git a/lib/librte_cmdline/meson.build b/lib/librte_cmdline/meson.build
+new file mode 100644
+index 000000000..ceac0a429
+--- /dev/null
++++ b/lib/librte_cmdline/meson.build
+@@ -0,0 +1,63 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++sources = [ 'cmdline.c',
++	'cmdline_cirbuf.c',
++	'cmdline_parse.c',
++	'cmdline_parse_etheraddr.c',
++	'cmdline_parse_ipaddr.c',
++	'cmdline_parse_num.c',
++	'cmdline_parse_portlist.c',
++	'cmdline_parse_string.c',
++	'cmdline_rdline.c',
++	'cmdline_socket.c',
++	'cmdline_vt100.c']
++
++install_headers('cmdline.h',
++	'cmdline_parse.h',
++	'cmdline_parse_num.h',
++	'cmdline_parse_ipaddr.h',
++	'cmdline_parse_etheraddr.h',
++	'cmdline_parse_string.h',
++	'cmdline_rdline.h',
++	'cmdline_vt100.h',
++	'cmdline_socket.h',
++	'cmdline_cirbuf.h',
++	'cmdline_parse_portlist.h')
++
++cmdline_lib = library('rte_cmdline', sources, dependencies: rte_eal,
++		install: true)
++rte_cmdline = declare_dependency(link_with: cmdline_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += cmdline_lib
++
++dpdk_conf.set('RTE_LIBRTE_CMDLINE', 1)
+diff --git a/lib/librte_compat/meson.build b/lib/librte_compat/meson.build
+new file mode 100644
+index 000000000..d4a994523
+--- /dev/null
++++ b/lib/librte_compat/meson.build
+@@ -0,0 +1,35 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++install_headers('rte_compat.h')
++
++rte_compat = declare_dependency(include_directories: include_directories('.'))
+diff --git a/lib/librte_ether/meson.build b/lib/librte_ether/meson.build
+new file mode 100644
+index 000000000..55eabd23a
+--- /dev/null
++++ b/lib/librte_ether/meson.build
+@@ -0,0 +1,49 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_ethdev.c', 'rte_flow.c']
++
++install_headers('rte_ethdev.h',
++	'rte_ethdev_pci.h',
++	'rte_ethdev_vdev.h',
++	'rte_eth_ctrl.h',
++	'rte_dev_info.h',
++	'rte_flow.h',
++	'rte_flow_driver.h')
++
++ether_lib = library('rte_ether', sources,
++	dependencies: [rte_eal, rte_ring, rte_mempool, rte_net, rte_mbuf],
++	install: true)
++rte_ether = declare_dependency(link_with: ether_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += ether_lib
+diff --git a/lib/librte_hash/meson.build b/lib/librte_hash/meson.build
+new file mode 100644
+index 000000000..6d8270b51
+--- /dev/null
++++ b/lib/librte_hash/meson.build
+@@ -0,0 +1,54 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_cuckoo_hash.c', 'rte_fbk_hash.c']
++
++headers = ['rte_cmp_arm64.h',
++	'rte_cmp_x86.h',
++	'rte_crc_arm64.h',
++	'rte_cuckoo_hash.h',
++	'rte_cuckoo_hash_x86.h',
++	'rte_fbk_hash.h',
++	'rte_hash_crc.h',
++	'rte_hash.h',
++	'rte_jhash.h',
++	'rte_thash.h']
++
++install_headers(headers)
++
++hash_lib = library('rte_hash', sources,
++	dependencies: [rte_eal, rte_ring, rte_compat],
++	install: true)
++rte_hash = declare_dependency(link_with: hash_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += hash_lib
+diff --git a/lib/librte_kvargs/meson.build b/lib/librte_kvargs/meson.build
+new file mode 100644
+index 000000000..6cd5ab377
+--- /dev/null
++++ b/lib/librte_kvargs/meson.build
+@@ -0,0 +1,43 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_kvargs.c']
++
++install_headers('rte_kvargs.h')
++
++kvargs_lib = library('rte_kvargs', sources,
++	dependencies: rte_eal,
++	install: true)
++rte_kvargs = declare_dependency(link_with: kvargs_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += kvargs_lib
+diff --git a/lib/librte_mbuf/meson.build b/lib/librte_mbuf/meson.build
+new file mode 100644
+index 000000000..7926e7236
+--- /dev/null
++++ b/lib/librte_mbuf/meson.build
+@@ -0,0 +1,42 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++sources = ['rte_mbuf.c', 'rte_mbuf_ptype.c']
++
++install_headers('rte_mbuf.h', 'rte_mbuf_ptype.h')
++
++mbuf_lib = library('rte_mbuf', sources,
++	dependencies: [rte_eal, rte_mempool, rte_ring],
++	install: true)
++rte_mbuf = declare_dependency(link_with: mbuf_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += mbuf_lib
+diff --git a/lib/librte_mempool/meson.build b/lib/librte_mempool/meson.build
+new file mode 100644
+index 000000000..6da2403cc
+--- /dev/null
++++ b/lib/librte_mempool/meson.build
+@@ -0,0 +1,43 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_mempool.c', 'rte_mempool_ops.c']
++
++install_headers('rte_mempool.h')
++
++mempool_lib = library('rte_mempool', sources,
++	dependencies: [rte_eal, rte_ring],
++	install: true)
++rte_mempool = declare_dependency(link_with: mempool_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += mempool_lib
+diff --git a/lib/librte_net/meson.build b/lib/librte_net/meson.build
+new file mode 100644
+index 000000000..7c8e323f6
+--- /dev/null
++++ b/lib/librte_net/meson.build
+@@ -0,0 +1,52 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_net.c', 'rte_net_crc.c']
++
++install_headers('rte_ip.h',
++	'rte_tcp.h',
++	'rte_udp.h',
++	'rte_sctp.h',
++	'rte_icmp.h',
++	'rte_arp.h',
++	'rte_ether.h',
++	'rte_gre.h',
++	'rte_net.h',
++	'rte_net_crc.h')
++
++net_lib = library('rte_net', sources,
++	dependencies: [rte_eal, rte_mbuf, rte_ring, rte_mempool],
++	install: true)
++rte_net = declare_dependency(link_with: net_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += net_lib
+diff --git a/lib/librte_ring/meson.build b/lib/librte_ring/meson.build
+new file mode 100644
+index 000000000..5832a7632
+--- /dev/null
++++ b/lib/librte_ring/meson.build
+@@ -0,0 +1,43 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++
++sources = ['rte_ring.c']
++
++install_headers('rte_ring.h')
++
++ring_lib = library('rte_ring', sources,
++	dependencies: rte_eal,
++	install: true)
++rte_ring = declare_dependency(link_with: ring_lib,
++	include_directories: include_directories('.'))
++
++dpdk_libraries += ring_lib
+diff --git a/lib/meson.build b/lib/meson.build
+index e7249bc8d..0ea608684 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -30,12 +30,12 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ subdir('librte_eal')
+-#subdir('librte_ring')
+-#subdir('librte_mempool')
+-#subdir('librte_cmdline')
+-#subdir('librte_mbuf')
+-#subdir('librte_net')
+-#subdir('librte_ether')
+-#subdir('librte_compat')
+-#subdir('librte_hash')
+-#subdir('librte_kvargs')
++subdir('librte_ring')
++subdir('librte_mempool')
++subdir('librte_cmdline')
++subdir('librte_mbuf')
++subdir('librte_net')
++subdir('librte_ether')
++subdir('librte_compat')
++subdir('librte_hash')
++subdir('librte_kvargs')
+-- 
+2.11.0
+

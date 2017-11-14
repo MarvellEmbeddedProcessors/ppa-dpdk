@@ -1,0 +1,67 @@
+From 4e9cd7d6bdb7b70fc7119b22b97545fe8716fb2d Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:53 +0100
+Subject: [PATCH 25/40] build: track driver include directories properly
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/mempool/meson.build   | 2 +-
+ drivers/net/i40e/meson.build  | 2 +-
+ drivers/net/ixgbe/meson.build | 2 +-
+ drivers/net/meson.build       | 2 +-
+ 4 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/drivers/mempool/meson.build b/drivers/mempool/meson.build
+index 1d003b757..daaabc5b6 100644
+--- a/drivers/mempool/meson.build
++++ b/drivers/mempool/meson.build
+@@ -39,7 +39,7 @@ foreach drv:mempool_drivers
+ 	sources = []
+ 	libs = []
+ 	cflags = []
+-	includes = []
++	includes = [include_directories(drv)]
+ 	# dependency managment. External deps managed using dependency
+ 	# objects, internal deps managed by name of lib
+ 	ext_deps = []
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index 3139fb001..dcc832b6f 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -55,7 +55,7 @@ if arch_subdir == 'x86'
+ 	sources += files('i40e_rxtx_vec_sse.c')
+ endif
+ 
+-includes = include_directories('base')
++includes += include_directories('base')
+ 
+ install_headers('rte_pmd_i40e.h')
+ 
+diff --git a/drivers/net/ixgbe/meson.build b/drivers/net/ixgbe/meson.build
+index 1ea60b0e2..3e164f97f 100644
+--- a/drivers/net/ixgbe/meson.build
++++ b/drivers/net/ixgbe/meson.build
+@@ -53,6 +53,6 @@ if arch_subdir == 'x86'
+ 	sources += files('ixgbe_rxtx_vec_sse.c')
+ endif
+ 
+-includes = include_directories('base')
++includes += include_directories('base')
+ 
+ install_headers('rte_pmd_ixgbe.h')
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 07f3f7969..3e587d809 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -51,7 +51,7 @@ foreach drv:net_drivers
+ 	sources = []
+ 	libs = []
+ 	cflags = []
+-	includes = []
++	includes = [include_directories(drv)]
+ 	# dependency managment. External deps managed using dependency
+ 	# objects, internal deps managed by name of lib
+ 	ext_deps = []
+-- 
+2.11.0
+

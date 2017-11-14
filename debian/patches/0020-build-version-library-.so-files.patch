@@ -1,0 +1,162 @@
+From 09724c39a415ef39e45049d45d0eeb87039debca Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:48 +0100
+Subject: [PATCH 20/40] build: version library .so files
+
+Also rename the ether library to ethdev to maintain backwards compatibility
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/meson.build        |  2 ++
+ lib/librte_cmdline/meson.build |  1 +
+ lib/librte_ether/meson.build   |  1 +
+ lib/librte_hash/meson.build    |  1 +
+ lib/librte_kvargs/meson.build  |  2 +-
+ lib/librte_mbuf/meson.build    |  1 +
+ lib/librte_mempool/meson.build |  2 +-
+ lib/librte_net/meson.build     |  1 +
+ lib/meson.build                | 14 +++++++++++++-
+ 9 files changed, 22 insertions(+), 3 deletions(-)
+
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index cd2328605..6b9177c05 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -47,6 +47,7 @@ foreach drv:net_drivers
+ 	dpdk_conf.set('RTE_LIBRTE_@0@_PMD'.format(drv.to_upper()),1)
+ 
+ 	# set up empty variables used for build
++	version = 1
+ 	sources = []
+ 	libs = []
+ 	cflags = []
+@@ -94,6 +95,7 @@ foreach drv:net_drivers
+ 		c_args: cflags,
+ 		link_args: '-Wl,--version-script=' + version_map,
+ 		link_depends: version_map,
++		version: '@0@.1'.format(version),
+ 		install: true,
+ 		install_dir: driver_install_path)
+ 
+diff --git a/lib/librte_cmdline/meson.build b/lib/librte_cmdline/meson.build
+index ed24b0b0e..c773f38c5 100644
+--- a/lib/librte_cmdline/meson.build
++++ b/lib/librte_cmdline/meson.build
+@@ -29,6 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++version = 2
+ sources = files('cmdline.c',
+ 	'cmdline_cirbuf.c',
+ 	'cmdline_parse.c',
+diff --git a/lib/librte_ether/meson.build b/lib/librte_ether/meson.build
+index 1c1f69802..ed9c29a78 100644
+--- a/lib/librte_ether/meson.build
++++ b/lib/librte_ether/meson.build
+@@ -30,6 +30,7 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ 
++version = 6
+ sources = files('rte_ethdev.c', 'rte_flow.c', 'rte_tm.c')
+ 
+ headers = files('rte_ethdev.h',
+diff --git a/lib/librte_hash/meson.build b/lib/librte_hash/meson.build
+index 2a0d21520..e3fb9fe0d 100644
+--- a/lib/librte_hash/meson.build
++++ b/lib/librte_hash/meson.build
+@@ -29,6 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++version = 2
+ headers = files('rte_cmp_arm64.h',
+ 	'rte_cmp_x86.h',
+ 	'rte_crc_arm64.h',
+diff --git a/lib/librte_kvargs/meson.build b/lib/librte_kvargs/meson.build
+index f70c3970c..30599d06e 100644
+--- a/lib/librte_kvargs/meson.build
++++ b/lib/librte_kvargs/meson.build
+@@ -29,7 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-
++version = 1
+ sources = files('rte_kvargs.c')
+ headers = files('rte_kvargs.h')
+ deps = ['eal']
+diff --git a/lib/librte_mbuf/meson.build b/lib/librte_mbuf/meson.build
+index 8235a2b28..19cd68528 100644
+--- a/lib/librte_mbuf/meson.build
++++ b/lib/librte_mbuf/meson.build
+@@ -29,6 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++version = 3
+ sources = files('rte_mbuf.c', 'rte_mbuf_ptype.c')
+ headers = files('rte_mbuf.h', 'rte_mbuf_ptype.h')
+ deps = ['eal', 'mempool', 'ring']
+diff --git a/lib/librte_mempool/meson.build b/lib/librte_mempool/meson.build
+index 1de47a6c9..9617010dd 100644
+--- a/lib/librte_mempool/meson.build
++++ b/lib/librte_mempool/meson.build
+@@ -29,7 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-
++version = 2
+ sources = files('rte_mempool.c', 'rte_mempool_ops.c')
+ headers = files('rte_mempool.h')
+ deps = ['eal', 'ring']
+diff --git a/lib/librte_net/meson.build b/lib/librte_net/meson.build
+index 493139d8c..0bfe53873 100644
+--- a/lib/librte_net/meson.build
++++ b/lib/librte_net/meson.build
+@@ -29,6 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
++version = 1
+ headers = files('rte_ip.h',
+ 	'rte_tcp.h',
+ 	'rte_udp.h',
+diff --git a/lib/meson.build b/lib/meson.build
+index a6b820661..55018173b 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -37,6 +37,7 @@ subdir('librte_compat')
+ libs = ['ring', 'mempool', 'cmdline', 'mbuf', 'net', 'ether', 'hash', 'kvargs']
+ 
+ foreach l:libs
++	version = 1
+ 	sources = []
+ 	headers = []
+ 	# use "deps" for internal DPDK dependencies, and "ext_deps" for
+@@ -55,8 +56,19 @@ foreach l:libs
+ 		dep_objs = [get_variable('dep_rte_' + d)] + dep_objs
+ 	endforeach
+ 
+-	lib = library('rte_' + l, sources, dependencies: dep_objs,
++	version_map = '@0@/@1@/rte_@2@_version.map'.format(
++			meson.current_source_dir(), dir_name, l)
++	libname = 'rte_' + l
++	if libname == 'rte_ether'
++		libname = 'rte_ethdev'
++	endif
++	lib = library(libname,
++			sources,
++			dependencies: dep_objs,
+ 			include_directories: include_directories(dir_name),
++			link_args: '-Wl,--version-script=' + version_map,
++			link_depends: version_map,
++			version: '@0@.1'.format(version),
+ 			install: true)
+ 	dep = declare_dependency(link_with: lib,
+ 			include_directories: include_directories(dir_name))
+-- 
+2.11.0
+

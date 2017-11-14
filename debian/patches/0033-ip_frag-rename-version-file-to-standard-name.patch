@@ -1,0 +1,72 @@
+From 7fa92ec26719a6d82612aa119e37226e016eb63a Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:52:01 +0100
+Subject: [PATCH 33/40] ip_frag: rename version file to standard name
+
+The version file did not quite match the directory name, as it was missing
+an '_' between ip and frag.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ lib/librte_ip_frag/Makefile                                            | 2 +-
+ lib/librte_ip_frag/{rte_ipfrag_version.map => rte_ip_frag_version.map} | 0
+ 2 files changed, 1 insertion(+), 1 deletion(-)
+ rename lib/librte_ip_frag/{rte_ipfrag_version.map => rte_ip_frag_version.map} (100%)
+
+--- a/lib/librte_ip_frag/Makefile
++++ b/lib/librte_ip_frag/Makefile
+@@ -43,7 +43,7 @@ LIB = librte_ip_frag.a
+ CFLAGS := -I$(SRCDIR) $(CFLAGS)
+ CFLAGS += $(WERROR_FLAGS) -O3
+ 
+-EXPORT_MAP := rte_ipfrag_version.map
++EXPORT_MAP := rte_ip_frag_version.map
+ 
+ LIBABIVER := 1
+ 
+--- /dev/null
++++ b/lib/librte_ip_frag/rte_ip_frag_version.map
+@@ -0,0 +1,20 @@
++DPDK_2.0 {
++	global:
++
++	rte_ip_frag_free_death_row;
++	rte_ip_frag_table_create;
++	rte_ip_frag_table_statistics_dump;
++	rte_ipv4_frag_reassemble_packet;
++	rte_ipv4_fragment_packet;
++	rte_ipv6_frag_reassemble_packet;
++	rte_ipv6_fragment_packet;
++
++	local: *;
++};
++
++DPDK_17.08 {
++    global:
++
++    rte_ip_frag_table_destroy;
++
++} DPDK_2.0;
+--- a/lib/librte_ip_frag/rte_ipfrag_version.map
++++ /dev/null
+@@ -1,20 +0,0 @@
+-DPDK_2.0 {
+-	global:
+-
+-	rte_ip_frag_free_death_row;
+-	rte_ip_frag_table_create;
+-	rte_ip_frag_table_statistics_dump;
+-	rte_ipv4_frag_reassemble_packet;
+-	rte_ipv4_fragment_packet;
+-	rte_ipv6_frag_reassemble_packet;
+-	rte_ipv6_fragment_packet;
+-
+-	local: *;
+-};
+-
+-DPDK_17.08 {
+-    global:
+-
+-    rte_ip_frag_table_destroy;
+-
+-} DPDK_2.0;

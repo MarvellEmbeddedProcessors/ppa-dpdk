@@ -1,0 +1,416 @@
+From f924534e66236cd58e4349ac5ee1e161cfaa4701 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:47 +0100
+Subject: [PATCH 19/40] build: build libraries in a loop for brevity
+
+now each library just has to specify it's source files, header files and
+dependencies, and the higher level lib directory will take care of the
+rest. Special case for eal, which is not just in one subdir, and is more
+complicated. It is also used sometimes by e.g. base code drivers, so give
+it it's own shortcut dependency in case needed.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ drivers/net/i40e/meson.build            |  2 +-
+ drivers/net/ixgbe/meson.build           |  2 +-
+ drivers/net/meson.build                 | 19 +++++++++++----
+ drivers/net/pcap/meson.build            |  6 ++---
+ lib/librte_cmdline/meson.build          | 12 +++-------
+ lib/librte_compat/meson.build           |  3 ++-
+ lib/librte_eal/bsdapp/eal/meson.build   |  1 +
+ lib/librte_eal/linuxapp/eal/meson.build |  1 +
+ lib/librte_ether/meson.build            | 13 ++++------
+ lib/librte_hash/meson.build             | 16 ++++---------
+ lib/librte_kvargs/meson.build           | 13 +++-------
+ lib/librte_mbuf/meson.build             | 12 +++-------
+ lib/librte_mempool/meson.build          | 12 +++-------
+ lib/librte_net/meson.build              | 12 +++-------
+ lib/librte_ring/meson.build             | 14 +++--------
+ lib/meson.build                         | 42 +++++++++++++++++++++++----------
+ 16 files changed, 79 insertions(+), 101 deletions(-)
+
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index 3786af1ed..3139fb001 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -48,7 +48,7 @@ sources = files(
+ 	'rte_pmd_i40e.c'
+ 	)
+ 
+-deps += rte_hash
++deps += ['hash']
+ 
+ if arch_subdir == 'x86'
+ 	dpdk_conf.set('RTE_LIBRTE_I40E_INC_VECTOR', 1)
+diff --git a/drivers/net/ixgbe/meson.build b/drivers/net/ixgbe/meson.build
+index 65c215271..1ea60b0e2 100644
+--- a/drivers/net/ixgbe/meson.build
++++ b/drivers/net/ixgbe/meson.build
+@@ -46,7 +46,7 @@ sources = files(
+ 	'rte_pmd_ixgbe.c'
+ )
+ 
+-deps += rte_hash
++deps += ['hash']
+ 
+ if arch_subdir == 'x86'
+ 	dpdk_conf.set('RTE_IXGBE_INC_VECTOR', 1)
+diff --git a/drivers/net/meson.build b/drivers/net/meson.build
+index 2358194e0..cd2328605 100644
+--- a/drivers/net/meson.build
++++ b/drivers/net/meson.build
+@@ -51,13 +51,21 @@ foreach drv:net_drivers
+ 	libs = []
+ 	cflags = []
+ 	includes = []
++	# dependency managment. External deps managed using dependency
++	# objects, internal deps managed by name of lib
++	ext_deps = []
+ 	# set up standard deps. Drivers can append/override as necessary
+-	deps = [rte_eal, rte_net, rte_mbuf, rte_ether,
+-		rte_mempool, rte_ring, rte_kvargs]
++	deps = ['eal', 'net', 'mbuf', 'ether', 'mempool', 'ring', 'kvargs']
+ 
+ 	# pull in driver directory which should assign to each of the above
+ 	subdir(drv)
+ 
++	# get dependency objs from strings
++	dep_objs = ext_deps
++	foreach d:deps
++		dep_objs += [get_variable('dep_rte_' + d)] + dep_objs
++	endforeach
++
+ 	# generate pmdinfo sources
+ 	pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+ 		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+@@ -65,10 +73,11 @@ foreach drv:net_drivers
+ 		out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
+ 		tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
+ 			src, include_directories: includes,
+-			dependencies: deps,
++			dependencies: dep_objs,
+ 			c_args: cflags)
+ 		sources += custom_target(out_filename,
+-				command: [pmdinfo, tmp_lib.full_path(), '@OUTPUT@', pmdinfogen],
++				command: [pmdinfo, tmp_lib.full_path(),
++					'@OUTPUT@', pmdinfogen],
+ 				output: out_filename,
+ 				depends: [pmdinfogen, tmp_lib])
+ 	endforeach
+@@ -80,7 +89,7 @@ foreach drv:net_drivers
+ 	lib = library(drv_name,
+ 		sources,
+ 		include_directories: includes,
+-		dependencies: deps,
++		dependencies: dep_objs,
+ 		link_with: libs,
+ 		c_args: cflags,
+ 		link_args: '-Wl,--version-script=' + version_map,
+diff --git a/drivers/net/pcap/meson.build b/drivers/net/pcap/meson.build
+index 015f6bfeb..a61668236 100644
+--- a/drivers/net/pcap/meson.build
++++ b/drivers/net/pcap/meson.build
+@@ -32,7 +32,7 @@
+ sources = files('rte_eth_pcap.c')
+ 
+ if pcap_dep.found()
+-	deps += pcap_dep
++	ext_deps += pcap_dep
+ else
+-	deps += cc.find_library('pcap')
+-endif
+\ No newline at end of file
++	ext_deps += cc.find_library('pcap')
++endif
+diff --git a/lib/librte_cmdline/meson.build b/lib/librte_cmdline/meson.build
+index 0b909b77e..ed24b0b0e 100644
+--- a/lib/librte_cmdline/meson.build
++++ b/lib/librte_cmdline/meson.build
+@@ -41,7 +41,7 @@ sources = files('cmdline.c',
+ 	'cmdline_socket.c',
+ 	'cmdline_vt100.c')
+ 
+-headers = ['cmdline.h',
++headers = files('cmdline.h',
+ 	'cmdline_parse.h',
+ 	'cmdline_parse_num.h',
+ 	'cmdline_parse_ipaddr.h',
+@@ -51,12 +51,6 @@ headers = ['cmdline.h',
+ 	'cmdline_vt100.h',
+ 	'cmdline_socket.h',
+ 	'cmdline_cirbuf.h',
+-	'cmdline_parse_portlist.h']
+-
+-install_headers(headers)
+-
+-lib = library('rte_cmdline', sources, dependencies: rte_eal,
+-		install: true)
+-rte_cmdline = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++	'cmdline_parse_portlist.h')
+ 
++deps = ['eal']
+diff --git a/lib/librte_compat/meson.build b/lib/librte_compat/meson.build
+index d4a994523..6773e2203 100644
+--- a/lib/librte_compat/meson.build
++++ b/lib/librte_compat/meson.build
+@@ -32,4 +32,5 @@
+ 
+ install_headers('rte_compat.h')
+ 
+-rte_compat = declare_dependency(include_directories: include_directories('.'))
++set_variable('dep_rte_compat',
++	declare_dependency(include_directories: include_directories('.')))
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index 008a719b8..ff2c2fee8 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -55,3 +55,4 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ dpdk_libraries += ['-pthread', eal_lib]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib, include_directories: eal_inc)
++set_variable('dep_rte_eal', rte_eal)
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index 79fcff42f..d290ae65e 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -60,3 +60,4 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ dpdk_libraries += ['-pthread', '-ldl', eal_lib]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib, include_directories: eal_inc)
++set_variable('dep_rte_eal', rte_eal)
+diff --git a/lib/librte_ether/meson.build b/lib/librte_ether/meson.build
+index e9ef496ad..1c1f69802 100644
+--- a/lib/librte_ether/meson.build
++++ b/lib/librte_ether/meson.build
+@@ -30,19 +30,16 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ 
+-sources = ['rte_ethdev.c', 'rte_flow.c']
++sources = files('rte_ethdev.c', 'rte_flow.c', 'rte_tm.c')
+ 
+-install_headers('rte_ethdev.h',
++headers = files('rte_ethdev.h',
+ 	'rte_ethdev_pci.h',
+ 	'rte_ethdev_vdev.h',
+ 	'rte_eth_ctrl.h',
+ 	'rte_dev_info.h',
+ 	'rte_flow.h',
+-	'rte_flow_driver.h')
++	'rte_flow_driver.h',
++	'rte_tm.h')
+ 
+-lib = library('rte_ether', sources,
+-	dependencies: [rte_eal, rte_ring, rte_mempool, rte_net, rte_mbuf],
+-	install: true)
+-rte_ether = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++deps = ['eal', 'ring', 'mempool', 'net', 'mbuf']
+ 
+diff --git a/lib/librte_hash/meson.build b/lib/librte_hash/meson.build
+index 48d0ecf80..2a0d21520 100644
+--- a/lib/librte_hash/meson.build
++++ b/lib/librte_hash/meson.build
+@@ -29,10 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-
+-sources = ['rte_cuckoo_hash.c', 'rte_fbk_hash.c']
+-
+-headers = ['rte_cmp_arm64.h',
++headers = files('rte_cmp_arm64.h',
+ 	'rte_cmp_x86.h',
+ 	'rte_crc_arm64.h',
+ 	'rte_cuckoo_hash.h',
+@@ -41,13 +38,8 @@ headers = ['rte_cmp_arm64.h',
+ 	'rte_hash_crc.h',
+ 	'rte_hash.h',
+ 	'rte_jhash.h',
+-	'rte_thash.h']
++	'rte_thash.h')
+ 
+-install_headers(headers)
+-
+-lib = library('rte_hash', sources,
+-	dependencies: [rte_eal, rte_ring, rte_compat],
+-	install: true)
+-rte_hash = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++sources = files('rte_cuckoo_hash.c', 'rte_fbk_hash.c')
++deps = ['eal', 'ring', 'compat']
+ 
+diff --git a/lib/librte_kvargs/meson.build b/lib/librte_kvargs/meson.build
+index bc79d55e9..f70c3970c 100644
+--- a/lib/librte_kvargs/meson.build
++++ b/lib/librte_kvargs/meson.build
+@@ -30,13 +30,6 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ 
+-sources = ['rte_kvargs.c']
+-
+-install_headers('rte_kvargs.h')
+-
+-lib = library('rte_kvargs', sources,
+-	dependencies: rte_eal,
+-	install: true)
+-rte_kvargs = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
+-
++sources = files('rte_kvargs.c')
++headers = files('rte_kvargs.h')
++deps = ['eal']
+diff --git a/lib/librte_mbuf/meson.build b/lib/librte_mbuf/meson.build
+index 0a302f464..8235a2b28 100644
+--- a/lib/librte_mbuf/meson.build
++++ b/lib/librte_mbuf/meson.build
+@@ -29,13 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-sources = ['rte_mbuf.c', 'rte_mbuf_ptype.c']
+-
+-install_headers('rte_mbuf.h', 'rte_mbuf_ptype.h')
+-
+-lib = library('rte_mbuf', sources,
+-	dependencies: [rte_eal, rte_mempool, rte_ring],
+-	install: true)
+-rte_mbuf = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++sources = files('rte_mbuf.c', 'rte_mbuf_ptype.c')
++headers = files('rte_mbuf.h', 'rte_mbuf_ptype.h')
++deps = ['eal', 'mempool', 'ring']
+ 
+diff --git a/lib/librte_mempool/meson.build b/lib/librte_mempool/meson.build
+index 15c5e6695..1de47a6c9 100644
+--- a/lib/librte_mempool/meson.build
++++ b/lib/librte_mempool/meson.build
+@@ -30,13 +30,7 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ 
+-sources = ['rte_mempool.c', 'rte_mempool_ops.c']
+-
+-install_headers('rte_mempool.h')
+-
+-lib = library('rte_mempool', sources,
+-	dependencies: [rte_eal, rte_ring],
+-	install: true)
+-rte_mempool = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++sources = files('rte_mempool.c', 'rte_mempool_ops.c')
++headers = files('rte_mempool.h')
++deps = ['eal', 'ring']
+ 
+diff --git a/lib/librte_net/meson.build b/lib/librte_net/meson.build
+index f4df1691f..493139d8c 100644
+--- a/lib/librte_net/meson.build
++++ b/lib/librte_net/meson.build
+@@ -29,10 +29,7 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-
+-sources = ['rte_net.c', 'rte_net_crc.c']
+-
+-install_headers('rte_ip.h',
++headers = files('rte_ip.h',
+ 	'rte_tcp.h',
+ 	'rte_udp.h',
+ 	'rte_sctp.h',
+@@ -43,9 +40,6 @@ install_headers('rte_ip.h',
+ 	'rte_net.h',
+ 	'rte_net_crc.h')
+ 
+-lib = library('rte_net', sources,
+-	dependencies: [rte_eal, rte_mbuf, rte_ring, rte_mempool],
+-	install: true)
+-rte_net = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
++sources = files('rte_net.c', 'rte_net_crc.c')
++deps = ['eal', 'mbuf', 'ring', 'mempool']
+ 
+diff --git a/lib/librte_ring/meson.build b/lib/librte_ring/meson.build
+index 20e623e9d..e36977f4e 100644
+--- a/lib/librte_ring/meson.build
++++ b/lib/librte_ring/meson.build
+@@ -29,14 +29,6 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-
+-sources = ['rte_ring.c']
+-
+-install_headers('rte_ring.h')
+-
+-lib = library('rte_ring', sources,
+-	dependencies: rte_eal,
+-	install: true)
+-rte_ring = declare_dependency(link_with: lib,
+-	include_directories: include_directories('.'))
+-
++sources = files('rte_ring.c')
++headers = files('rte_ring.h')
++deps = ['eal']
+diff --git a/lib/meson.build b/lib/meson.build
+index d628fd0ff..a6b820661 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -29,23 +29,39 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-# special case for eal, not a simple lib
++# special case for eal, not a simple lib, and compat, just a header
+ subdir('librte_eal')
++subdir('librte_compat')
+ 
+ # process all libraries equally, as far as possible
+-libs = ['ring', 'mempool', 'cmdline', 'mbuf', 'net', 'ether', 'compat', 'hash', 'kvargs']
++libs = ['ring', 'mempool', 'cmdline', 'mbuf', 'net', 'ether', 'hash', 'kvargs']
++
+ foreach l:libs
+-	dpdk_conf.set('RTE_LIBRTE_@0@'.format(l.to_upper()),1)
+-	subdir('librte_@0@'.format(l))
++	sources = []
++	headers = []
++	# use "deps" for internal DPDK dependencies, and "ext_deps" for
++	# external package/library requirements
++	deps = []
++	ext_deps = []
++
++	dpdk_conf.set('RTE_LIBRTE_' + l.to_upper(), 1)
++	dir_name = 'librte_' + l
++	subdir(dir_name)
++
++	install_headers(headers)
++
++	dep_objs = []
++	foreach d:deps
++		dep_objs = [get_variable('dep_rte_' + d)] + dep_objs
++	endforeach
++
++	lib = library('rte_' + l, sources, dependencies: dep_objs,
++			include_directories: include_directories(dir_name),
++			install: true)
++	dep = declare_dependency(link_with: lib,
++			include_directories: include_directories(dir_name))
++	set_variable('dep_rte_' + l, dep)
++
+ 	dpdk_libraries = [lib] + dpdk_libraries
+ endforeach
+ 
+-#subdir('librte_ring')
+-#subdir('librte_mempool')
+-#subdir('librte_cmdline')
+-#subdir('librte_mbuf')
+-#subdir('librte_net')
+-#subdir('librte_ether')
+-#subdir('librte_compat')
+-#subdir('librte_hash')
+-#subdir('librte_kvargs')
+-- 
+2.11.0
+

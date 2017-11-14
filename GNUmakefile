@@ -36,6 +36,9 @@
 RTE_SDK := $(CURDIR)
 export RTE_SDK
 
+LIBMUSDK_PATH := /usr
+export LIBMUSDK_PATH
+
 #
 # directory list
 #

@@ -1,0 +1,229 @@
+From 251776ffd98e804fe3af9e3c74d17047c13c06e8 Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:56 +0100
+Subject: [PATCH 28/40] testpmd: compile testpmd with meson and ninja
+
+Add testpmd to build. When done, it was found that the -ldl flag was
+getting duplicated too many times in the build causing static linkage to
+fail on testpmd as the commandline got to long. [Possible meson bug]. Fix
+this by making testpmd link explicitly against libdl (or libexecinfo on
+BSD) and don't have EAL track it as its dependency.
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ app/meson.build                         | 32 +++++++++++++++
+ app/test-pmd/meson.build                | 71 +++++++++++++++++++++++++++++++++
+ lib/librte_eal/bsdapp/eal/meson.build   |  9 +++--
+ lib/librte_eal/linuxapp/eal/meson.build |  9 +++--
+ meson.build                             |  6 ++-
+ 5 files changed, 118 insertions(+), 9 deletions(-)
+ create mode 100644 app/meson.build
+ create mode 100644 app/test-pmd/meson.build
+
+diff --git a/app/meson.build b/app/meson.build
+new file mode 100644
+index 000000000..bdf043ead
+--- /dev/null
++++ b/app/meson.build
+@@ -0,0 +1,32 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++subdir('test-pmd')
+diff --git a/app/test-pmd/meson.build b/app/test-pmd/meson.build
+new file mode 100644
+index 000000000..9c60f4bc0
+--- /dev/null
++++ b/app/test-pmd/meson.build
+@@ -0,0 +1,71 @@
++#   BSD LICENSE
++#
++#   Copyright(c) 2017 Intel Corporation. All rights reserved.
++#   All rights reserved.
++#
++#   Redistribution and use in source and binary forms, with or without
++#   modification, are permitted provided that the following conditions
++#   are met:
++#
++#     * Redistributions of source code must retain the above copyright
++#       notice, this list of conditions and the following disclaimer.
++#     * Redistributions in binary form must reproduce the above copyright
++#       notice, this list of conditions and the following disclaimer in
++#       the documentation and/or other materials provided with the
++#       distribution.
++#     * Neither the name of Intel Corporation nor the names of its
++#       contributors may be used to endorse or promote products derived
++#       from this software without specific prior written permission.
++#
++#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
++#   "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
++#   LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
++#   A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
++#   OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
++#   SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
++#   LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
++#   DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
++#   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
++#   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
++#   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
++
++sources = files('cmdline.c',
++	'cmdline_flow.c',
++	'config.c',
++	'csumonly.c',
++	'flowgen.c',
++	'icmpecho.c',
++	'ieee1588fwd.c',
++	'iofwd.c',
++	'macfwd.c',
++	'macswap.c',
++	'parameters.c',
++	'rxonly.c',
++	'testpmd.c',
++	'txonly.c')
++
++deps = ['rte_eal', 'rte_net', 'rte_ether', 'rte_mempool', 'rte_ring',
++	'rte_mbuf', 'rte_gro', 'rte_cmdline', 'rte_metrics']
++if dpdk_conf.has('RTE_LIBRTE_I40E_PMD')
++	deps += 'rte_pmd_i40e'
++endif
++if dpdk_conf.has('RTE_LIBRTE_IXGBE_PMD')
++	deps += 'rte_pmd_ixgbe'
++endif
++
++dep_objs = []
++foreach d:deps
++	dep_objs += get_variable('dep_' + d)
++endforeach
++
++link_libs = []
++if get_option('default_library') == 'static'
++	link_libs = dpdk_drivers
++endif
++
++executable('dpdk-testpmd',
++	sources,
++	link_whole: link_libs,
++	dependencies: dep_objs,
++	link_args: eal_extra_link_arg, # add -ldl for linux, -lexecinfo for BSD
++	install: true)
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index 86a9e3d14..96ad1cef7 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -44,6 +44,8 @@ sources = ['eal_alarm.c',
+ 		'eal_pci.c',
+ ]
+ 
++eal_extra_link_arg = '-lexecinfo'
++
+ version_map = join_paths(meson.current_source_dir(), 'rte_eal_version.map')
+ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_sources,
+ 			dependencies: dependency('threads'),
+@@ -51,15 +53,14 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 			version: '@0@.1'.format(version),
+ 			c_args: '-D_GNU_SOURCE',
+ 			link_depends: version_map,
+-			link_args: ['-lexecinfo',
++			link_args: [eal_extra_link_arg,
+ 				'-Wl,--version-script=' + version_map],
+ 			install: true
+ )
+ 
+-dpdk_libraries += ['-pthread', eal_lib]
++dpdk_libraries += [eal_lib, '-pthread', eal_extra_link_arg]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib,
+ 		include_directories: eal_inc,
+-		dependencies: dependency('threads'),
+-		link_args: '-lexecinfo')
++		dependencies: dependency('threads'))
+ set_variable('dep_rte_eal', rte_eal)
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index 90ecfc394..30741519b 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -49,6 +49,8 @@ sources = ['eal_alarm.c',
+ 		'eal_pci.c',
+ ]
+ 
++eal_extra_link_arg = '-ldl'
++
+ version_map = join_paths(meson.current_source_dir(), 'rte_eal_version.map')
+ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_sources,
+ 			dependencies: dependency('threads'),
+@@ -56,15 +58,14 @@ eal_lib = library('rte_eal', sources, eal_common_sources, eal_common_arch_source
+ 			version: '@0@.1'.format(version),
+ 			c_args: '-D_GNU_SOURCE',
+ 			link_depends: version_map,
+-			link_args: ['-ldl',
++			link_args: [eal_extra_link_arg,
+ 				'-Wl,--version-script=' + version_map],
+ 			install: true
+ )
+ 
+-dpdk_libraries += ['-pthread', '-ldl', eal_lib]
++dpdk_libraries += [eal_lib, '-pthread', eal_extra_link_arg]
+ 
+ rte_eal = declare_dependency(link_with: eal_lib,
+ 		include_directories: eal_inc,
+-		dependencies: dependency('threads'),
+-		link_args: '-ldl')
++		dependencies: dependency('threads'))
+ set_variable('dep_rte_eal', rte_eal)
+diff --git a/meson.build b/meson.build
+index daadf7235..dfcead92a 100644
+--- a/meson.build
++++ b/meson.build
+@@ -60,7 +60,10 @@ subdir('config')
+ subdir('lib')
+ subdir('buildtools')
+ subdir('drivers')
++
++# build binaries and installable tools
+ subdir('usertools')
++subdir('app')
+ 
+ # write the build config
+ build_cfg = 'rte_build_config.h'
+@@ -68,7 +71,8 @@ configure_file(output: build_cfg,
+ 		configuration: dpdk_conf,
+ 		install_dir: get_option('includedir'))
+ 
+-# for static builds, include the drivers directly
++# for static builds, include the drivers as libs, and also any
++# other dependent libs that DPDK needs to link against
+ if get_option('default_library') == 'static'
+ 	dpdk_libraries = dpdk_drivers + dpdk_libraries
+ endif
+-- 
+2.11.0
+

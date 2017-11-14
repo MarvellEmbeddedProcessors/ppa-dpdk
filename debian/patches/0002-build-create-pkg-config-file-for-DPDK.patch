@@ -1,0 +1,47 @@
+From 1178d6580ce164fba4e994805ecdf5b86418881f Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:30 +0100
+Subject: [PATCH 02/40] build: create pkg-config file for DPDK
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ meson.build | 17 ++++++++++++++++-
+ 1 file changed, 16 insertions(+), 1 deletion(-)
+
+diff --git a/meson.build b/meson.build
+index 8383d23b5..d7acf174d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -36,9 +36,10 @@ project('DPDK', 'C',
+ 	meson_version: '>= 0.40.1'
+ )
+ 
+-# set up some global vars for compiler, platform and configuration
++# set up some global vars for compiler, platform, configuration, etc.
+ cc = meson.get_compiler('c')
+ dpdk_conf = configuration_data()
++dpdk_libraries = []
+ 
+ # for static libs, treat the drivers as regular libraries, otherwise
+ # for shared libs, put them in a driver folder
+@@ -58,3 +59,17 @@ build_cfg = 'rte_build_config.h'
+ configure_file(output: build_cfg,
+ 		configuration: dpdk_conf,
+ 		install_dir: get_option('includedir'))
++
++# the DPDK libs needs to be passed to the link command in reverse order
++dpdk_link_libs = []
++foreach lib: dpdk_libraries
++	dpdk_link_libs = [lib] + dpdk_link_libs
++endforeach
++
++pkg = import('pkgconfig')
++pkg.generate(name: meson.project_name(),
++	version: meson.project_version(),
++	libraries: dpdk_link_libs,
++	description: 'The Data Plane Development Kit (DPDK)',
++	extra_cflags: '-include "rte_config.h"'
++)
+-- 
+2.11.0
+

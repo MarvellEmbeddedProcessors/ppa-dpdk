@@ -1,0 +1,161 @@
+From 0410d55fc55d0c76e998ff7936801489ff8d3f9b Mon Sep 17 00:00:00 2001
+From: Bruce Richardson <bruce.richardson@intel.com>
+Date: Mon, 14 Aug 2017 10:51:39 +0100
+Subject: [PATCH 11/40] build: simplify generation of pmd.c files
+
+rather than using the compiler to generate a temporary .o file, get meson
+to do it, so we don't need to track dpdk includes directly, and pass in a
+range of parameters
+
+Signed-off-by: Bruce Richardson <bruce.richardson@intel.com>
+---
+ buildtools/gen-pmdinfo-cfile.sh                | 14 +++++---------
+ drivers/net/i40e/meson.build                   | 21 ++++++++++-----------
+ lib/librte_eal/bsdapp/eal/meson.build          |  1 -
+ lib/librte_eal/common/include/arch/meson.build |  1 -
+ lib/librte_eal/common/include/meson.build      |  1 -
+ lib/librte_eal/linuxapp/eal/meson.build        |  1 -
+ lib/meson.build                                |  3 ---
+ meson.build                                    |  2 --
+ 8 files changed, 15 insertions(+), 29 deletions(-)
+
+diff --git a/buildtools/gen-pmdinfo-cfile.sh b/buildtools/gen-pmdinfo-cfile.sh
+index a042375a8..fe88e627e 100755
+--- a/buildtools/gen-pmdinfo-cfile.sh
++++ b/buildtools/gen-pmdinfo-cfile.sh
+@@ -30,16 +30,12 @@
+ #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+-input=$1
++
++arfile=$1
+ output=$2
+ pmdinfogen=$3
+-CFLAGS=$4
+-build_root=$5
+ 
+-tmp_o=${output%.c.pmd.o}.o
+-tmp_c=${output%.o}.c
++tmp_o=${output%.c.pmd.c}.tmp.o
+ 
+-set -x
+-cc -Wfatal-errors $CFLAGS -I$build_root -include rte_config.h -c $input -o $tmp_o && \
+-		$pmdinfogen $tmp_o $tmp_c && \
+-		cc -c $tmp_c -o $output
++ar p $arfile > $tmp_o && \
++		$pmdinfogen $tmp_o $output
+diff --git a/drivers/net/i40e/meson.build b/drivers/net/i40e/meson.build
+index e1c3e17a9..7d103868d 100644
+--- a/drivers/net/i40e/meson.build
++++ b/drivers/net/i40e/meson.build
+@@ -60,20 +60,19 @@ install_headers('rte_pmd_i40e.h')
+ 
+ pmdinfogen_srcs = run_command('grep', '--files-with-matches',
+ 		'RTE_PMD_REGISTER_.*(.*)', sources).stdout().strip().split()
+-objs = []
+ foreach src: pmdinfogen_srcs
+-	out_filename = '@0@.pmd.o'.format(src.split('/')[-1])
+-	pmd_o_file = custom_target(out_filename,
+-			command: [pmdinfo, '@INPUT@', '@OUTPUT@',
+-			pmdinfogen.full_path(),
+-			' '.join(dpdk_includes + i40e_cflags + ['-march=@0@'.format(machine)]),
+-			meson.build_root()],
+-			input: src, output: out_filename,
+-			depends: pmdinfogen)
+-	objs += pmd_o_file
++	out_filename = '@0@.pmd.c'.format(src.split('/')[-1])
++	tmp_lib = static_library('tmp_@0@'.format(src.underscorify()),
++		src, include_directories: include_directories('base'),
++		dependencies: deps,
++		c_args: i40e_cflags)
++	sources += custom_target(out_filename,
++			command: [pmdinfo, tmp_lib.full_path(), '@OUTPUT@', pmdinfogen],
++			output: out_filename,
++			depends: [pmdinfogen, tmp_lib])
+ endforeach
+ 
+-i40e_lib = library('rte_pmd_i40e', sources, objs,
++i40e_lib = library('rte_pmd_i40e', sources,
+ 	include_directories: include_directories('base'),
+ 	dependencies: deps,
+ 	link_with: base_lib,
+diff --git a/lib/librte_eal/bsdapp/eal/meson.build b/lib/librte_eal/bsdapp/eal/meson.build
+index 1df28d507..008a719b8 100644
+--- a/lib/librte_eal/bsdapp/eal/meson.build
++++ b/lib/librte_eal/bsdapp/eal/meson.build
+@@ -30,7 +30,6 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ eal_inc += include_directories('include')
+-dpdk_includes += '-I@0@/include'.format(meson.current_source_dir())
+ install_subdir('include/exec-env', install_dir: 'include')
+ 
+ sources = ['eal_alarm.c',
+diff --git a/lib/librte_eal/common/include/arch/meson.build b/lib/librte_eal/common/include/arch/meson.build
+index 0bf3ee94d..863d7e4bb 100644
+--- a/lib/librte_eal/common/include/arch/meson.build
++++ b/lib/librte_eal/common/include/arch/meson.build
+@@ -30,5 +30,4 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ eal_inc += include_directories(arch_subdir)
+-dpdk_includes += '-I@0@/@1@'.format(meson.current_source_dir(), arch_subdir)
+ subdir(arch_subdir)
+diff --git a/lib/librte_eal/common/include/meson.build b/lib/librte_eal/common/include/meson.build
+index 6d61c8003..e92c4eb7c 100644
+--- a/lib/librte_eal/common/include/meson.build
++++ b/lib/librte_eal/common/include/meson.build
+@@ -30,7 +30,6 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ eal_inc += include_directories('.')
+-dpdk_includes += '-I@0@'.format(meson.current_source_dir())
+ 
+ common_headers = [
+ 	'rte_alarm.h',
+diff --git a/lib/librte_eal/linuxapp/eal/meson.build b/lib/librte_eal/linuxapp/eal/meson.build
+index f8547a8a4..79fcff42f 100644
+--- a/lib/librte_eal/linuxapp/eal/meson.build
++++ b/lib/librte_eal/linuxapp/eal/meson.build
+@@ -30,7 +30,6 @@
+ #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ 
+ eal_inc += include_directories('include')
+-dpdk_includes += '-I@0@/include'.format(meson.current_source_dir())
+ install_subdir('include/exec-env', install_dir: 'include')
+ 
+ sources = ['eal_alarm.c',
+diff --git a/lib/meson.build b/lib/meson.build
+index 0af9eb706..d628fd0ff 100644
+--- a/lib/meson.build
++++ b/lib/meson.build
+@@ -35,12 +35,9 @@ subdir('librte_eal')
+ # process all libraries equally, as far as possible
+ libs = ['ring', 'mempool', 'cmdline', 'mbuf', 'net', 'ether', 'compat', 'hash', 'kvargs']
+ foreach l:libs
+-
+ 	dpdk_conf.set('RTE_LIBRTE_@0@'.format(l.to_upper()),1)
+ 	subdir('librte_@0@'.format(l))
+ 	dpdk_libraries = [lib] + dpdk_libraries
+-	dpdk_includes += '-I@0@/librte_@1@'.format(meson.current_source_dir(), l)
+-
+ endforeach
+ 
+ #subdir('librte_ring')
+diff --git a/meson.build b/meson.build
+index 717ec070d..daadf7235 100644
+--- a/meson.build
++++ b/meson.build
+@@ -54,8 +54,6 @@ endif
+ # able to be included in any file. We also store a global array of include dirs
+ # for passing to pmdinfogen scripts
+ global_inc = include_directories('.', 'config')
+-dpdk_includes = ['-I@0@'.format(meson.current_source_dir()),
+-		'-I@0@/config'.format(meson.current_source_dir())]
+ subdir('config')
+ 
+ # now build libs and drivers
+-- 
+2.11.0
+
